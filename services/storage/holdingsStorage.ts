@@ -93,6 +93,25 @@ export class HoldingsStorage {
     }
   }
 
+  // EXCHANGE RATE CACHE
+  async saveExchangeRate(usdKrwRate: number): Promise<void> {
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.EXCHANGE_RATE,
+      JSON.stringify({ rate: usdKrwRate, fetchedAt: new Date().toISOString() })
+    );
+  }
+
+  async getExchangeRate(): Promise<{ rate: number; fetchedAt: Date } | null> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.EXCHANGE_RATE);
+      if (!data) return null;
+      const parsed = JSON.parse(data);
+      return { rate: parsed.rate, fetchedAt: new Date(parsed.fetchedAt) };
+    } catch {
+      return null;
+    }
+  }
+
   async updateLastRefresh(): Promise<void> {
     await AsyncStorage.setItem(
       STORAGE_KEYS.LAST_REFRESH,

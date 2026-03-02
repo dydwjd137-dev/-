@@ -2,6 +2,7 @@
   "expo": {
     "name": "KongDadPortfolio",
     "slug": "KongDadPortfolio",
+    "owner": "dydwjd137",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -26,6 +27,9 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "scheme": "kongdadportfolio"
+    "scheme": "kongdadportfolio",
+    "plugins": [
+      "expo-web-browser"
+    ]
   }
 }

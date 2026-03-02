@@ -1,25 +1,32 @@
 import { Tabs } from 'expo-router';
+import { View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import Colors from '../../constants/Colors';
+import MarketTicker from '../../components/MarketTicker';
+import { useTheme } from '../../contexts/DisplayPreferencesContext';
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+  const { themeColors } = useTheme();
   return (
-    <Tabs
+    <View style={{ flex: 1, backgroundColor: themeColors.background, paddingTop: insets.top }}>
+      <MarketTicker />
+      <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors.tabIconSelected,
-        tabBarInactiveTintColor: Colors.tabIconDefault,
+        tabBarActiveTintColor: themeColors.tabIconSelected,
+        tabBarInactiveTintColor: themeColors.tabIconDefault,
         tabBarStyle: {
-          backgroundColor: Colors.background,
-          borderTopColor: 'rgba(107, 79, 255, 0.2)',
+          backgroundColor: themeColors.background,
+          borderTopColor: themeColors.border,
           borderTopWidth: 1,
         },
         tabBarLabelStyle: {
           fontSize: 10,
         },
         headerStyle: {
-          backgroundColor: Colors.background,
+          backgroundColor: themeColors.background,
         },
-        headerTintColor: Colors.text,
+        headerTintColor: themeColors.text,
         headerShadowVisible: false,
       }}
     >
@@ -62,12 +69,13 @@ export default function TabLayout() {
       <Tabs.Screen
         name="history"
         options={{
-          title: '기록',
+          title: '절세',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="book" size={size} color={color} />
+            <Ionicons name="shield-checkmark" size={size} color={color} />
           ),
         }}
       />
     </Tabs>
+    </View>
   );
 }

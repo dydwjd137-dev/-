@@ -10,16 +10,48 @@ import {
 export async function enrichHoldings(
   holdings: Holding[],
   quotesCache: Record<string, StockQuote>,
-  dividendsCache: Record<string, DividendInfo[]>
+  dividendsCache: Record<string, DividendInfo[]>,
+  exchangeRate: number = 1450,
 ): Promise<EnrichedHolding[]> {
   return holdings.map((holding) => {
-    const quote = quotesCache[holding.ticker] || null;
+    const isKRWTicker = holding.ticker.endsWith('.KS') || holding.ticker.endsWith('.KQ') || holding.ticker.endsWith('.KO');
+    let quote = quotesCache[holding.ticker] || null;
+
+    // manualPrice가 설정된 경우 API quote를 덮어씀
+    if (holding.manualPrice && holding.manualPrice > 0) {
+      const priceInKRW = isKRWTicker ? holding.manualPrice : holding.manualPrice * exchangeRate;
+      quote = {
+        ticker: holding.ticker,
+        currentPrice: holding.manualPrice,
+        priceInKRW,
+        currency: isKRWTicker ? 'KRW' : 'USD',
+        change: 0,
+        changePercent: 0,
+        marketState: 'CLOSED',
+        lastUpdated: new Date(),
+      };
+    }
+
     const dividends = dividendsCache[holding.ticker] || [];
 
     const currentValue = quote ? quote.priceInKRW * holding.quantity : 0;
     const totalCost = holding.purchasePrice * holding.quantity;
     const profitLoss = currentValue - totalCost;
-    const profitLossPercent = totalCost > 0 ? (profitLoss / totalCost) * 100 : 0;
+
+    // USD 종목은 환율 왜곡 없이 달러 기준 수익률 계산
+    // 단, purchaseExchangeRate가 저장된 경우(달러 입력 종목)에만 적용
+    // 코인처럼 KRW로 입력해 purchaseExchangeRate가 없으면 → KRW 기준 계산
+    let profitLossPercent = 0;
+    if (totalCost > 0) {
+      if (quote && quote.currency !== 'KRW' && holding.purchaseExchangeRate) {
+        const purchasePriceNative = holding.purchasePrice / holding.purchaseExchangeRate;
+        profitLossPercent = purchasePriceNative > 0
+          ? ((quote.currentPrice - purchasePriceNative) / purchasePriceNative) * 100
+          : 0;
+      } else {
+        profitLossPercent = (profitLoss / totalCost) * 100;
+      }
+    }
 
     return {
       ...holding,
@@ -35,7 +67,8 @@ export async function enrichHoldings(
 
 // 포트폴리오 요약 정보 계산
 export function calculatePortfolioSummary(
-  holdings: EnrichedHolding[]
+  holdings: EnrichedHolding[],
+  usdKrwRate: number = 1450
 ): PortfolioSummary {
   const totalValue = holdings.reduce((sum, h) => sum + h.currentValue, 0);
   const totalCost = holdings.reduce((sum, h) => sum + h.totalCost, 0);
@@ -43,12 +76,24 @@ export function calculatePortfolioSummary(
   const totalProfitLossPercent =
     totalCost > 0 ? (totalProfitLoss / totalCost) * 100 : 0;
 
-  // 배당 예상액 계산
+  // 일간 수익금 계산 (전일 종가 대비)
+  let dailyProfitLoss = 0;
+  holdings.forEach((h) => {
+    if (h.quote) {
+      // quote.change는 USD 단위의 일간 변화
+      // priceInKRW로 환산된 변화 계산: change * (priceInKRW / currentPrice)
+      const changeInKRW = h.quote.change * (h.quote.priceInKRW / h.quote.currentPrice);
+      dailyProfitLoss += changeInKRW * h.quantity;
+    }
+  });
+
+  // 배당 예상액 계산 (USD 기준)
   let annualDividend = 0;
   holdings.forEach((h) => {
     h.dividends.forEach((d) => {
       const paymentsPerYear = getPaymentsPerYear(d.frequency);
-      annualDividend += d.amount * h.quantity * paymentsPerYear;
+      const amtUSD = d.currency === 'KRW' ? d.amount / usdKrwRate : d.amount;
+      annualDividend += amtUSD * h.quantity * paymentsPerYear;
     });
   });
 
@@ -57,6 +102,7 @@ export function calculatePortfolioSummary(
     totalCost,
     totalProfitLoss,
     totalProfitLossPercent,
+    dailyProfitLoss,
     monthlyDividendEstimate: annualDividend / 12,
     annualDividendEstimate: annualDividend,
     holdings,
@@ -78,9 +124,9 @@ function getPaymentsPerYear(frequency: DividendInfo['frequency']): number {
   }
 }
 
-// 숫자를 KRW 형식으로 포맷 (예: 12,450,000)
+// 숫자를 KRW 형식으로 포맷 (예: 12,450,000원)
 export function formatKRW(value: number): string {
-  return `₩${Math.round(value).toLocaleString('ko-KR')}`;
+  return `${Math.round(value).toLocaleString('ko-KR')}원`;
 }
 
 // 숫자를 USD 형식으로 포맷 (예: $1,234.56)
@@ -103,9 +149,8 @@ export function getDisplayCurrency(category: string): 'KRW' | 'USD' {
 }
 
 // KRW 가격을 USD로 환산 (환율 적용)
-export function convertKRWToUSD(krwAmount: number): number {
-  const exchangeRate = 1350; // USD/KRW 환율
-  return krwAmount / exchangeRate;
+export function convertKRWToUSD(krwAmount: number, rate = 1350): number {
+  return krwAmount / rate;
 }
 
 // 카테고리에 맞는 통화로 가격 포맷

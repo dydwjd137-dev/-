@@ -1,89 +1,120 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useMemo } from 'react';
+import { Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { HeatmapBox as HeatmapBoxType } from '../../types/portfolio';
-import Colors from '../../constants/Colors';
-import { formatPrice, formatPercent } from '../../utils/portfolioCalculations';
+import { formatKRW, formatUSD, formatPercent } from '../../utils/portfolioCalculations';
+import { TmRect } from '../../utils/treemapLayout';
+import { ALL_STOCKS } from '../../constants/searchDatabase';
+import { HeatmapLabelMode, useTheme } from '../../contexts/DisplayPreferencesContext';
 
 interface HeatmapBoxProps {
   box: HeatmapBoxType;
+  rect: TmRect;
+  onPress: () => void;
+  showKRW: boolean;
+  exchangeRate: number;
+  labelMode: HeatmapLabelMode;
 }
 
-export function HeatmapBox({ box }: HeatmapBoxProps) {
-  const sizeStyle = getSizeStyle(box.size);
+export function HeatmapBox({ box, rect, onPress, showKRW, exchangeRate, labelMode }: HeatmapBoxProps) {
+  const { themeColors } = useTheme();
+  const { width, height } = rect;
+  const minDim = Math.min(width, height);
+
+  // Dynamic font sizes based on actual pixel dimensions
+  const tickerFontSize = Math.min(Math.max(minDim * 0.28, 5), 28);
+  const percentFontSize = Math.min(Math.max(minDim * 0.17, 5), 16);
+  const amountFontSize = Math.min(Math.max(minDim * 0.13, 5), 13);
+
+  const showLabel = minDim >= 16;
+  const showPercent = minDim >= 28;
+  const showAmount = width >= 60 && height >= 60;
+
   const percentColor =
     box.changePercent > 0
-      ? Colors.profit
+      ? themeColors.profit
       : box.changePercent < 0
-      ? Colors.loss
-      : Colors.textSecondary;
+      ? themeColors.loss
+      : themeColors.textSecondary;
+
+  // 표시할 라벨 결정 (searchDatabase 룩업)
+  const displayLabel = useMemo(() => {
+    const entry = ALL_STOCKS.find((e) => e.ticker === box.ticker);
+
+    if (!entry) return box.ticker;
+
+    if (entry.category === 'us-etf') {
+      return box.ticker;
+    }
+
+    if (entry.category === 'kr-stock' || entry.category === 'kr-etf') {
+      return entry.nameKr ?? entry.name ?? box.ticker;
+    }
+
+    switch (labelMode) {
+      case 'nameKr': return entry.nameKr ?? box.ticker;
+      case 'nameEn': return entry.name ?? box.ticker;
+      default:       return box.ticker;
+    }
+  }, [box.ticker, labelMode]);
 
   return (
-    <View
+    <TouchableOpacity
       style={[
         styles.box,
-        sizeStyle,
-        { backgroundColor: box.color },
+        {
+          position: 'absolute',
+          left: rect.x,
+          top: rect.y,
+          width: rect.width,
+          height: rect.height,
+          backgroundColor: box.color,
+        },
       ]}
+      onPress={onPress}
+      activeOpacity={0.7}
     >
-      <Text style={styles.ticker}>{box.ticker}</Text>
-      <Text style={[styles.percent, { color: percentColor }]}>
-        {formatPercent(box.changePercent)}
-      </Text>
-      <Text style={styles.amount}>{formatPrice(box.value, box.category)}</Text>
-    </View>
+      {showLabel && (
+        <Text
+          style={[styles.label, { fontSize: tickerFontSize, color: themeColors.text }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+        >
+          {displayLabel}
+        </Text>
+      )}
+      {showPercent && (
+        <Text style={[styles.percent, { fontSize: percentFontSize, color: percentColor }]}>
+          {formatPercent(box.changePercent)}
+        </Text>
+      )}
+      {showAmount && (
+        <Text style={[styles.amount, { fontSize: amountFontSize, color: themeColors.textSecondary }]}>
+          {showKRW ? formatKRW(box.value) : formatUSD(box.value / exchangeRate)}
+        </Text>
+      )}
+    </TouchableOpacity>
   );
-}
-
-function getSizeStyle(size: HeatmapBoxType['size']) {
-  switch (size) {
-    case 'large':
-      return styles.sizeLarge;
-    case 'medium':
-      return styles.sizeMedium;
-    case 'small':
-      return styles.sizeSmall;
-    case 'tiny':
-      return styles.sizeTiny;
-  }
 }
 
 const styles = StyleSheet.create({
   box: {
-    padding: 12,
-    borderRadius: 2,
     borderWidth: 0.5,
-    borderColor: 'rgba(0, 0, 0, 0.3)',
+    borderColor: 'rgba(0, 0, 0, 0.15)',
     justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    padding: 2,
   },
-  sizeLarge: {
-    flex: 2,
-    minHeight: 100,
-  },
-  sizeMedium: {
-    flex: 1,
-    minHeight: 90,
-  },
-  sizeSmall: {
-    flex: 1,
-    minHeight: 42,
-  },
-  sizeTiny: {
-    flex: 1,
-    minHeight: 25,
-  },
-  ticker: {
-    fontSize: 11,
-    color: Colors.text,
-    fontWeight: '600',
-    marginBottom: 4,
+  label: {
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
   percent: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 2,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   amount: {
-    fontSize: 10,
-    color: Colors.textSecondary,
+    textAlign: 'center',
+    opacity: 0.85,
   },
 });

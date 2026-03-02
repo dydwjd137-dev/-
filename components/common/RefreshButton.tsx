@@ -1,11 +1,7 @@
 import React from 'react';
-import {
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-} from 'react-native';
+import { TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Colors from '../../constants/Colors';
+import { useTheme } from '../../contexts/DisplayPreferencesContext';
 
 interface RefreshButtonProps {
   onRefresh: () => void;
@@ -13,16 +9,17 @@ interface RefreshButtonProps {
 }
 
 export function RefreshButton({ onRefresh, isRefreshing }: RefreshButtonProps) {
+  const { themeColors } = useTheme();
   return (
     <TouchableOpacity
-      style={styles.button}
+      style={[styles.button, { backgroundColor: themeColors.cardBackground, borderColor: themeColors.border }]}
       onPress={onRefresh}
       disabled={isRefreshing}
     >
       {isRefreshing ? (
-        <ActivityIndicator size="small" color={Colors.primary} />
+        <ActivityIndicator size="small" color={themeColors.primary} />
       ) : (
-        <Ionicons name="refresh" size={24} color={Colors.primary} />
+        <Ionicons name="refresh" size={24} color={themeColors.primary} />
       )}
     </TouchableOpacity>
   );
@@ -33,10 +30,8 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: Colors.cardBackground,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(107, 79, 255, 0.3)',
   },
 });

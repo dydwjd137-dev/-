@@ -6,4 +6,7 @@ export const STORAGE_KEYS = {
   DIVIDENDS_CACHE: '@portfolio/dividends_cache',
   LAST_REFRESH: '@portfolio/last_refresh',
   USER_PREFERENCES: '@portfolio/preferences',
+  EXCHANGE_RATE: '@portfolio/exchange_rate',
+  CUSTOM_CATEGORIES: '@portfolio/custom_categories',
+  SNAPSHOTS: '@portfolio/snapshots',
 } as const;

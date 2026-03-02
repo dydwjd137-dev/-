@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,235 +7,261 @@ import {
   RefreshControl,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Colors from '../../constants/Colors';
 import { usePortfolio } from '../../contexts/PortfolioContext';
-import { Heatmap } from '../../components/heatmap/Heatmap';
+import { useTheme } from '../../contexts/DisplayPreferencesContext';
+import { Heatmap, ViewMode } from '../../components/heatmap/Heatmap';
+import { PieChart } from '../../components/heatmap/PieChart';
 import { AddHoldingModal } from '../../components/portfolio/AddHoldingModal';
+import { BrokerageDashboard } from '../../components/portfolio/BrokerageDashboard';
 import { RefreshButton } from '../../components/common/RefreshButton';
+import { SettingsModal } from '../../components/settings/SettingsModal';
 import {
-  formatKRW,
   formatUSD,
-  formatPrice,
-  formatPercent,
-  formatDate,
   convertKRWToUSD,
+  formatPercent,
+  formatKRW,
 } from '../../utils/portfolioCalculations';
-import {
-  generateDividendCalendar,
-  getThisWeekDividends,
-} from '../../utils/dividendCalendar';
 
 export default function HomeScreen() {
+  const { themeColors } = useTheme();
   const {
     holdings,
     summary,
     isLoading,
     isRefreshing,
     refreshPrices,
-    deleteHolding,
+    exchangeRate,
   } = usePortfolio();
   const [modalVisible, setModalVisible] = useState(false);
+  const [settingsVisible, setSettingsVisible] = useState(false);
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const [fadeAnim] = useState(new Animated.Value(1));
+  const [viewMode, setViewMode] = useState<ViewMode>('cumulative');
+  const [chartMode, setChartMode] = useState<'heatmap' | 'pie'>('heatmap');
+  const [showKRW, setShowKRW] = useState(false);
 
-  const handleDeleteHolding = async (id: string, ticker: string) => {
-    console.log('🗑️ Delete button clicked for:', ticker, id);
-
-    // Web에서는 window.confirm 사용
-    const confirmed = typeof window !== 'undefined' && window.confirm
-      ? window.confirm(`${ticker}을(를) 삭제하시겠습니까?`)
-      : true;
-
-    if (!confirmed) {
-      console.log('❌ Delete cancelled by user');
-      return;
-    }
-
-    try {
-      console.log('🗑️ Deleting holding:', id);
-      await deleteHolding(id);
-      console.log('✅ Delete successful');
-    } catch (error) {
-      console.error('❌ Delete failed:', error);
-      Alert.alert('오류', '종목 삭제에 실패했습니다.');
-    }
-  };
-
-  // 이번 주 배당 가져오기
-  const thisWeekDividends = summary
-    ? getThisWeekDividends(generateDividendCalendar(summary.holdings))
-    : [];
+  // 슬라이드 애니메이션 (3초마다 전환)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => {
+        setCurrentSlide((prev) => (prev + 1) % 2);
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }).start();
+      });
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [fadeAnim]);
 
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>포트폴리오 불러오는 중...</Text>
+      <View style={[styles.loadingContainer, { backgroundColor: themeColors.background }]}>
+        <ActivityIndicator size="large" color={themeColors.primary} />
+        <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>
+          포트폴리오 불러오는 중...
+        </Text>
       </View>
     );
   }
 
   return (
     <ScrollView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: themeColors.background }]}
       refreshControl={
         <RefreshControl
           refreshing={isRefreshing}
           onRefresh={refreshPrices}
-          tintColor={Colors.primary}
+          tintColor={themeColors.primary}
         />
       }
     >
-      {/* 헤더와 새로고침 버튼 */}
+      {/* 헤더: 포트폴리오 정보 + 새로고침 버튼 */}
       <View style={styles.headerRow}>
-        <View style={styles.header}>
-          <Text style={styles.greeting}>안녕하세요 👋</Text>
-          <Text style={styles.subtitle}>오늘의 포트폴리오</Text>
+        <View style={styles.portfolioHeader}>
+          {/* 환율 + 원화 토글 버튼 */}
+          <View style={styles.rateRow}>
+            <Text style={[styles.portfolioLabel, { color: themeColors.textSecondary }]}>
+              1 USD = {exchangeRate.toLocaleString('ko-KR')}원
+            </Text>
+            <TouchableOpacity
+              style={[
+                styles.currencyToggle,
+                { backgroundColor: themeColors.cardBackground, borderColor: themeColors.border },
+                showKRW && { backgroundColor: themeColors.primary, borderColor: themeColors.primary },
+              ]}
+              onPress={() => setShowKRW((v) => !v)}
+            >
+              <Text style={[
+                styles.currencyToggleText,
+                { color: showKRW ? '#fff' : themeColors.textSecondary },
+              ]}>
+                {showKRW ? '₩ 원화' : '$ 달러'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={[styles.totalAssetAmount, { color: themeColors.text }]} numberOfLines={1}>
+            {summary
+              ? showKRW
+                ? formatKRW(summary.totalValue)
+                : formatUSD(convertKRWToUSD(summary.totalValue, exchangeRate))
+              : showKRW ? '₩0' : '$0.00'}
+          </Text>
+          {/* 슬라이드되는 수익 정보 (고정 높이) */}
+          <View style={styles.slidingContainer}>
+            <Animated.View style={{ opacity: fadeAnim, position: 'absolute', width: '100%' }}>
+              <Text style={[styles.slidingText, { color: themeColors.textSecondary }]}>
+                {currentSlide === 0
+                  ? `총 수익 ${summary && summary.totalProfitLoss >= 0 ? '+' : ''}${summary
+                      ? showKRW
+                        ? formatKRW(summary.totalProfitLoss)
+                        : formatUSD(convertKRWToUSD(summary.totalProfitLoss, exchangeRate))
+                      : showKRW ? '₩0' : '$0.00'} (${summary ? formatPercent(summary.totalProfitLossPercent) : '0.00%'})`
+                  : `일간 수익 ${summary && summary.dailyProfitLoss >= 0 ? '+' : ''}${summary
+                      ? showKRW
+                        ? formatKRW(summary.dailyProfitLoss)
+                        : formatUSD(convertKRWToUSD(summary.dailyProfitLoss, exchangeRate))
+                      : showKRW ? '₩0' : '$0.00'}`}
+              </Text>
+            </Animated.View>
+          </View>
         </View>
-        <RefreshButton onRefresh={refreshPrices} isRefreshing={isRefreshing} />
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={[
+              styles.gearButton,
+              { backgroundColor: themeColors.cardBackground, borderColor: themeColors.border },
+            ]}
+            onPress={() => setSettingsVisible(true)}
+          >
+            <Ionicons name="settings-outline" size={22} color={themeColors.textSecondary} />
+          </TouchableOpacity>
+          <RefreshButton onRefresh={refreshPrices} isRefreshing={isRefreshing} />
+        </View>
       </View>
 
-      {/* 총 자산 카드 */}
-      <View style={styles.mainCard}>
-        <Text style={styles.cardLabel}>총 자산 (USD)</Text>
-        <Text style={styles.mainAmount}>
-          {summary ? formatUSD(convertKRWToUSD(summary.totalValue)) : '$0.00'}
+      {/* 차트 타입 토글 (히트맵 / 원형그래프) */}
+      <View style={styles.toggleContainer}>
+        <TouchableOpacity
+          style={[
+            styles.toggleButton,
+            { backgroundColor: themeColors.cardBackground, borderColor: themeColors.border },
+            chartMode === 'heatmap' && { backgroundColor: themeColors.primary, borderColor: themeColors.primary },
+          ]}
+          onPress={() => setChartMode('heatmap')}
+        >
+          <Text style={[
+            styles.toggleButtonText,
+            { color: chartMode === 'heatmap' ? '#fff' : themeColors.textSecondary },
+          ]}>
+            히트맵
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.toggleButton,
+            { backgroundColor: themeColors.cardBackground, borderColor: themeColors.border },
+            chartMode === 'pie' && { backgroundColor: themeColors.primary, borderColor: themeColors.primary },
+          ]}
+          onPress={() => setChartMode('pie')}
+        >
+          <Text style={[
+            styles.toggleButtonText,
+            { color: chartMode === 'pie' ? '#fff' : themeColors.textSecondary },
+          ]}>
+            원형그래프
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* 일간/누적 토글 버튼 (히트맵 모드에서만 표시) */}
+      {chartMode === 'heatmap' && (
+        <View style={[styles.toggleContainer, { marginTop: -4 }]}>
+          <TouchableOpacity
+            style={[
+              styles.toggleButton,
+              { backgroundColor: themeColors.cardBackground, borderColor: themeColors.border },
+              viewMode === 'daily' && { backgroundColor: themeColors.primary, borderColor: themeColors.primary },
+            ]}
+            onPress={() => setViewMode('daily')}
+          >
+            <Text style={[
+              styles.toggleButtonText,
+              { color: viewMode === 'daily' ? '#fff' : themeColors.textSecondary },
+            ]}>
+              일간
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.toggleButton,
+              { backgroundColor: themeColors.cardBackground, borderColor: themeColors.border },
+              viewMode === 'cumulative' && { backgroundColor: themeColors.primary, borderColor: themeColors.primary },
+            ]}
+            onPress={() => setViewMode('cumulative')}
+          >
+            <Text style={[
+              styles.toggleButtonText,
+              { color: viewMode === 'cumulative' ? '#fff' : themeColors.textSecondary },
+            ]}>
+              누적
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* 히트맵 / 원형그래프 */}
+      <View style={styles.heatmapContainer}>
+        {chartMode === 'heatmap' ? (
+          <Heatmap holdings={holdings} viewMode={viewMode} showKRW={showKRW} exchangeRate={exchangeRate} />
+        ) : (
+          <PieChart holdings={holdings} exchangeRate={exchangeRate} showKRW={showKRW} />
+        )}
+      </View>
+
+      {/* 계좌별 현황 */}
+      <BrokerageDashboard
+        holdings={holdings}
+        exchangeRate={exchangeRate}
+        showKRW={showKRW}
+      />
+
+      {/* 월 예상배당금 */}
+      <View style={styles.monthlyDividendContainer}>
+        <Text style={[styles.monthlyDividendText, { color: themeColors.textSecondary }]}>
+          {new Date().getMonth() + 1}월 예상배당금: {summary ? formatUSD(summary.monthlyDividendEstimate) : '$0.00'}
         </Text>
-        <View style={styles.changeRow}>
-          <Text
-            style={[
-              styles.profitText,
-              summary && summary.totalProfitLoss < 0 && { color: Colors.loss },
-            ]}
-          >
-            {summary
-              ? `${formatUSD(convertKRWToUSD(summary.totalProfitLoss))} (${formatPercent(
-                  summary.totalProfitLossPercent
-                )})`
-              : '+$0.00 (0.00%)'}
-          </Text>
-        </View>
       </View>
-
-      {/* 요약 카드들 */}
-      <View style={styles.summaryRow}>
-        <View style={[styles.summaryCard, { flex: 1, marginRight: 8 }]}>
-          <Text style={styles.summaryLabel}>수익률</Text>
-          <Text
-            style={[
-              styles.summaryValue,
-              {
-                color:
-                  summary && summary.totalProfitLossPercent > 0
-                    ? Colors.profit
-                    : summary && summary.totalProfitLossPercent < 0
-                    ? Colors.loss
-                    : Colors.textSecondary,
-              },
-            ]}
-          >
-            {summary
-              ? formatPercent(summary.totalProfitLossPercent)
-              : '0.00%'}
-          </Text>
-        </View>
-        <View style={[styles.summaryCard, { flex: 1, marginLeft: 8 }]}>
-          <Text style={styles.summaryLabel}>월 배당</Text>
-          <Text style={[styles.summaryValue, { color: Colors.dividend }]}>
-            {summary ? formatKRW(summary.monthlyDividendEstimate) : '₩0'}
-          </Text>
-        </View>
-      </View>
-
-      {/* 포트폴리오 히트맵 */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>포트폴리오</Text>
-        <Heatmap holdings={holdings} />
-      </View>
-
-      {/* 이번 주 배당 */}
-      {thisWeekDividends.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>이번 주 배당</Text>
-          {thisWeekDividends.slice(0, 3).map((div) => (
-            <View key={div.id} style={styles.dividendCard}>
-              <View style={styles.dividendRow}>
-                <View>
-                  <Text style={styles.stockName}>{div.stockName}</Text>
-                  <Text style={styles.dividendDate}>
-                    {formatDate(div.date)}
-                  </Text>
-                </View>
-                <Text style={[styles.dividendAmount, { color: Colors.dividend }]}>
-                  {formatKRW(div.amount)}
-                </Text>
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {/* 보유 주식 */}
-      {holdings.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>보유 주식</Text>
-          {holdings.slice(0, 5).map((holding) => (
-            <View key={holding.id} style={styles.stockCard}>
-              <View style={styles.stockRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.stockName}>{holding.ticker}</Text>
-                  <Text style={styles.stockShares}>
-                    {holding.quantity}주 • {holding.category}
-                  </Text>
-                </View>
-                <View style={styles.stockRight}>
-                  <Text style={styles.stockValue}>
-                    {formatPrice(holding.currentValue, holding.category)}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.stockChange,
-                      {
-                        color:
-                          holding.profitLoss > 0
-                            ? Colors.profit
-                            : holding.profitLoss < 0
-                            ? Colors.loss
-                            : Colors.textSecondary,
-                      },
-                    ]}
-                  >
-                    {formatPercent(holding.profitLossPercent)}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  onPress={() => handleDeleteHolding(holding.id, holding.ticker)}
-                  style={styles.deleteButton}
-                >
-                  <Ionicons name="trash-outline" size={20} color={Colors.loss} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
 
       {/* 하단 여백 (FAB 공간 확보) */}
       <View style={{ height: 100 }} />
 
       {/* 플로팅 추가 버튼 */}
       <TouchableOpacity
-        style={styles.fab}
+        style={[styles.fab, { backgroundColor: themeColors.primary }]}
         onPress={() => setModalVisible(true)}
       >
-        <Ionicons name="add" size={32} color={Colors.text} />
+        <Ionicons name="add" size={32} color="#fff" />
       </TouchableOpacity>
 
       {/* 자산 추가 모달 */}
       <AddHoldingModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
+      />
+
+      {/* 설정 모달 */}
+      <SettingsModal
+        visible={settingsVisible}
+        onClose={() => setSettingsVisible(false)}
       />
     </ScrollView>
   );
@@ -244,160 +270,102 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: Colors.background,
     justifyContent: 'center',
     alignItems: 'center',
   },
   loadingText: {
-    color: Colors.textSecondary,
     marginTop: 16,
     fontSize: 14,
   },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingHorizontal: 24,
     paddingTop: 60,
-    paddingBottom: 8,
+    paddingBottom: 16,
   },
-  header: {
+  portfolioHeader: {
     flex: 1,
   },
-  greeting: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: Colors.text,
+  rateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     marginBottom: 4,
   },
-  subtitle: {
-    fontSize: 16,
-    color: Colors.textSecondary,
+  portfolioLabel: {
+    fontSize: 13,
+    fontWeight: '500',
   },
-  mainCard: {
-    backgroundColor: Colors.cardBackground,
-    marginHorizontal: 24,
-    padding: 24,
-    borderRadius: 20,
+  currencyToggle: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(107, 79, 255, 0.2)',
-    marginBottom: 16,
   },
-  cardLabel: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginBottom: 8,
+  currencyToggleText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
-  mainAmount: {
-    fontSize: 36,
+  slidingContainer: {
+    height: 20,
+    marginTop: 4,
+    position: 'relative',
+  },
+  slidingText: {
+    fontSize: 13,
+  },
+  totalAssetAmount: {
+    fontSize: 32,
     fontWeight: 'bold',
-    color: Colors.text,
-    marginBottom: 8,
+    lineHeight: 40,
   },
-  changeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  profitText: {
-    fontSize: 16,
-    color: Colors.profit,
-    fontWeight: '600',
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 24,
-    marginBottom: 24,
-  },
-  summaryCard: {
-    backgroundColor: Colors.cardBackground,
-    padding: 20,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(107, 79, 255, 0.2)',
-  },
-  summaryLabel: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    marginBottom: 8,
-  },
-  summaryValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  section: {
-    paddingHorizontal: 24,
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: Colors.text,
-    marginBottom: 16,
-  },
-  dividendCard: {
-    backgroundColor: Colors.cardBackground,
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(107, 79, 255, 0.2)',
-    marginBottom: 12,
-  },
-  dividendRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  stockName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.text,
-    marginBottom: 4,
-  },
-  dividendDate: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-  },
-  dividendAmount: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  stockCard: {
-    backgroundColor: Colors.cardBackground,
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(107, 79, 255, 0.2)',
-    marginBottom: 12,
-  },
-  stockRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  stockShares: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-  },
-  stockRight: {
+  headerActions: {
     alignItems: 'flex-end',
+    gap: 8,
   },
-  stockValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.text,
-    marginBottom: 4,
+  gearButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
   },
-  stockChange: {
+  toggleContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 24,
+    marginBottom: 12,
+    gap: 8,
+  },
+  toggleButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  toggleButtonText: {
     fontSize: 14,
     fontWeight: '600',
   },
-  deleteButton: {
-    padding: 8,
-    marginLeft: 8,
+  heatmapContainer: {
+    paddingHorizontal: 24,
+    marginBottom: 16,
+  },
+  monthlyDividendContainer: {
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  monthlyDividendText: {
+    fontSize: 16,
+    fontWeight: '500',
   },
   fab: {
     position: 'absolute',
@@ -406,7 +374,6 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 8,
