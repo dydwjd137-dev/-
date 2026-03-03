@@ -26,13 +26,14 @@ import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../contexts/DisplayPreferencesContext';
 import { GOOGLE_CLIENT_IDS } from '../../constants/googleAuth';
 
 WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
-  const { signIn } = useAuth();
+  const { signIn, continueAsGuest } = useAuth();
   const router     = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const { themeColors } = useTheme();
@@ -83,6 +84,27 @@ export default function LoginScreen() {
             <Text style={styles.googleBtnText}>Google로 계속하기</Text>
           </TouchableOpacity>
         )}
+
+        {/* 구분선 */}
+        <View style={styles.divider}>
+          <View style={[styles.dividerLine, { backgroundColor: themeColors.border }]} />
+          <Text style={[styles.dividerText, { color: themeColors.textSecondary }]}>또는</Text>
+          <View style={[styles.dividerLine, { backgroundColor: themeColors.border }]} />
+        </View>
+
+        {/* 게스트 버튼 */}
+        <TouchableOpacity
+          style={[styles.guestBtn, { borderColor: themeColors.border, backgroundColor: themeColors.cardBackground }]}
+          onPress={continueAsGuest}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="bar-chart-outline" size={18} color={themeColors.primary} />
+          <Text style={[styles.guestBtnText, { color: themeColors.text }]}>로그인 없이 포트폴리오 관리하기</Text>
+        </TouchableOpacity>
+
+        <Text style={[styles.guestNotice, { color: themeColors.textSecondary }]}>
+          기기에만 저장됩니다. 나중에 로그인하면 데이터가 자동으로 연동됩니다.
+        </Text>
 
         <Text style={[styles.terms, { color: themeColors.textSecondary }]}>
           로그인 시{' '}
@@ -158,6 +180,39 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#1a1a1a',
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    gap: 10,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    fontSize: 12,
+  },
+  guestBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    width: '100%',
+  },
+  guestBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  guestNotice: {
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 16,
   },
   terms: {
     fontSize: 11,

@@ -12,6 +12,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { useTheme } from '../../contexts/DisplayPreferencesContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { useRouter } from 'expo-router';
 import { Heatmap, ViewMode } from '../../components/heatmap/Heatmap';
 import { PieChart } from '../../components/heatmap/PieChart';
 import { AddHoldingModal } from '../../components/portfolio/AddHoldingModal';
@@ -27,6 +29,8 @@ import {
 
 export default function HomeScreen() {
   const { themeColors } = useTheme();
+  const { isGuest } = useAuth();
+  const router = useRouter();
   const {
     holdings,
     summary,
@@ -135,6 +139,15 @@ export default function HomeScreen() {
           </View>
         </View>
         <View style={styles.headerActions}>
+          {isGuest && (
+            <TouchableOpacity
+              style={[styles.loginChip, { backgroundColor: themeColors.primary }]}
+              onPress={() => router.push('/(auth)/login')}
+            >
+              <Ionicons name="person-outline" size={14} color="#fff" />
+              <Text style={styles.loginChipText}>로그인</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={[
               styles.gearButton,
@@ -366,6 +379,19 @@ const styles = StyleSheet.create({
   monthlyDividendText: {
     fontSize: 16,
     fontWeight: '500',
+  },
+  loginChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  loginChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#fff',
   },
   fab: {
     position: 'absolute',

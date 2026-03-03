@@ -112,6 +112,10 @@ async function fetchFxHistory(
  * @param rawHoldings  현재 보유 종목 목록 (Holding[])
  * @param fallbackRate API 실패 시 사용할 현재 USD/KRW 환율
  * @param maxDays      최대 백필 일수 (기본 90일)
+ *
+ * 처리 대상:
+ *   ① 마지막 스냅샷 이후 누락된 날짜
+ *   ② 이미 저장되었으나 holdings[] 가 비어있는 날짜 (구버전 or 이전 백필)
  */
 export async function backfillSnapshots(
   rawHoldings: Holding[],
@@ -124,16 +128,23 @@ export async function backfillSnapshots(
   if (snapshots.length === 0) return; // 기준 스냅샷이 없으면 백필 불가
 
   const lastDate = snapshots[snapshots.length - 1].date;
-  let missingDates = getMissingDates(lastDate);
-  if (missingDates.length === 0) return; // 빠진 날 없음
+  const missingDates = getMissingDates(lastDate);
+
+  // holdings가 비어있는 기존 스냅샷도 재계산 대상에 포함
+  const emptyHoldingDates = snapshots
+    .filter(s => s.holdings.length === 0)
+    .map(s => s.date);
+
+  let datesToProcess = [...new Set([...missingDates, ...emptyHoldingDates])].sort();
+  if (datesToProcess.length === 0) return;
 
   // 너무 긴 기간은 최근 maxDays 일만 처리
-  if (missingDates.length > maxDays) {
-    missingDates = missingDates.slice(-maxDays);
+  if (datesToProcess.length > maxDays) {
+    datesToProcess = datesToProcess.slice(-maxDays);
   }
 
-  const startDate = missingDates[0];
-  const endDate   = missingDates[missingDates.length - 1];
+  const startDate = datesToProcess[0];
+  const endDate   = datesToProcess[datesToProcess.length - 1];
 
   // 유니크 티커 → TD 심볼 맵
   const tickerMap = new Map<string, string>();
@@ -162,11 +173,12 @@ export async function backfillSnapshots(
   }
 
   // 날짜별 스냅샷 계산 & 저장
-  for (const date of missingDates) {
+  for (const date of datesToProcess) {
     const rate = fxHistory[date] ?? fallbackRate;
     let totalValue = 0;
     let totalCost  = 0;
     let hasPrice   = false;
+    const holdingSnaps: { symbol: string; value: number; profit: number }[] = [];
 
     for (const h of rawHoldings) {
       // 이 날짜 이후에 매수한 종목은 제외
@@ -179,15 +191,24 @@ export async function backfillSnapshots(
       if (!entry) continue; // 해당 날짜 시세 없음 (주말·공휴일 등)
 
       hasPrice = true;
-      // purchasePrice는 KRW (types/portfolio.ts 주석 기준)
-      totalCost += h.purchasePrice * h.quantity;
+      const cost = h.purchasePrice * h.quantity;
       // 종가 → KRW 환산
       const priceKRW = entry.currency === 'KRW' ? entry.close : entry.close * rate;
-      totalValue += priceKRW * h.quantity;
+      const value    = priceKRW * h.quantity;
+
+      totalCost  += cost;
+      totalValue += value;
+      holdingSnaps.push({ symbol: h.ticker, value, profit: value - cost });
     }
 
     if (hasPrice && totalValue > 0) {
-      await saveSnapshot({ date, totalValue, totalCost });
+      await saveSnapshot({
+        date,
+        totalValue,
+        totalCost,
+        totalProfit: totalValue - totalCost,
+        holdings: holdingSnaps,
+      });
     }
   }
 }

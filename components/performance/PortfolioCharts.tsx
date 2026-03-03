@@ -33,6 +33,10 @@ export interface SnapData {
   yearLabel?: string;
   totalValue: number;
   totalCost: number;
+  /** 스냅샷의 실제 날짜 (YYYY-MM-DD) — 툴팁에 표시 */
+  dateStr?: string;
+  /** 해당 날짜의 종목별 스냅샷 — 툴팁 상세 표시용 */
+  holdings?: { symbol: string; value: number; profit: number }[];
 }
 
 // ── 내부 유틸 ────────────────────────────────────────────────
@@ -126,16 +130,68 @@ function Legend() {
 const BAR_H = 90;
 const COL_W = 38;
 
+/** 선택된 SnapData의 툴팁 패널 (BarChart / LineChart 공용) */
+function SelInfoPanel({ sel }: { sel: SnapData }) {
+  const { themeColors } = useTheme();
+  if (sel.totalValue === 0 && sel.totalCost === 0) return null;
+  const isProfit = sel.totalValue >= sel.totalCost;
+  const pnl = sel.totalValue - sel.totalCost;
+  const displayDate = sel.dateStr ?? ((sel.yearLabel ? `${sel.yearLabel} ` : '') + sel.label);
+  return (
+    <View style={[styles.selInfo, { backgroundColor: themeColors.cardBackground, borderColor: themeColors.border }]}>
+      <Text style={[styles.selDate, { color: themeColors.text }]}>{displayDate}</Text>
+      <View style={styles.selRow}>
+        <View style={[styles.selDot, { backgroundColor: '#6B4FFF' }]} />
+        <Text style={[styles.selLabel, { color: themeColors.textSecondary }]}>투자원금</Text>
+        <Text style={[styles.selVal, { color: themeColors.text }]}>{fmtKRW(sel.totalCost)}</Text>
+      </View>
+      <View style={styles.selRow}>
+        <View style={[styles.selDot, { backgroundColor: isProfit ? themeColors.profit : '#C0003C' }]} />
+        <Text style={[styles.selLabel, { color: themeColors.textSecondary }]}>평가금액</Text>
+        <Text style={[styles.selVal, { color: isProfit ? themeColors.profit : '#C0003C' }]}>
+          {fmtKRW(sel.totalValue)}
+        </Text>
+      </View>
+      <View style={styles.selRow}>
+        <View style={[styles.selDot, { backgroundColor: 'transparent' }]} />
+        <Text style={[styles.selLabel, { color: themeColors.textSecondary }]}>손익</Text>
+        <Text style={[styles.selVal, { color: isProfit ? themeColors.profit : '#C0003C' }]}>
+          {isProfit ? '+' : ''}{fmtKRW(pnl)}
+        </Text>
+      </View>
+      {sel.holdings && sel.holdings.length > 0 && (
+        <>
+          <View style={[styles.selDivider, { backgroundColor: themeColors.border }]} />
+          <Text style={[styles.selHoldingsTitle, { color: themeColors.textSecondary }]}>종목별</Text>
+          {[...sel.holdings]
+            .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
+            .slice(0, 6)
+            .map(h => (
+              <View key={h.symbol} style={styles.selRow}>
+                <Text style={[styles.selHoldingSymbol, { color: themeColors.text }]}>{h.symbol}</Text>
+                <Text style={[styles.selHoldingVal, { color: themeColors.textSecondary }]}>{fmtKRW(h.value)}</Text>
+                <Text style={[styles.selPnl, { color: h.profit >= 0 ? themeColors.profit : '#C0003C' }]}>
+                  {h.profit >= 0 ? '+' : ''}{fmtKRW(h.profit)}
+                </Text>
+              </View>
+            ))}
+        </>
+      )}
+    </View>
+  );
+}
+
 export function BarChart({ data }: { data: SnapData[] }) {
   const { themeColors } = useTheme();
-  const hasData = data.some(d => d.totalValue > 0 || d.totalCost > 0);
-  if (!hasData) {
-    return <Text style={[styles.chartEmpty, { color: themeColors.textSecondary }]}>새로고침 후 차트가 표시됩니다</Text>;
-  }
+  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
 
   const firstIdx = data.findIndex(d => d.totalValue > 0 || d.totalCost > 0);
-  const visible = firstIdx > 0 ? data.slice(firstIdx) : data;
-  const maxVal = Math.max(...visible.map(d => Math.max(d.totalValue, d.totalCost)), 1);
+  const visible = firstIdx >= 0 ? data.slice(firstIdx) : [];
+  const maxVal = visible.length > 0 ? Math.max(...visible.map(d => Math.max(d.totalValue, d.totalCost)), 1) : 1;
+
+  if (visible.length === 0) {
+    return <Text style={[styles.chartEmpty, { color: themeColors.textSecondary }]}>새로고침 후 차트가 표시됩니다</Text>;
+  }
 
   return (
     <>
@@ -146,22 +202,40 @@ export function BarChart({ data }: { data: SnapData[] }) {
             const costH  = Math.max(2, (d.totalCost  / maxVal) * BAR_H);
             const valueH = Math.max(2, (d.totalValue / maxVal) * BAR_H);
             const valueColor = d.totalValue >= d.totalCost ? themeColors.profit : '#C0003C';
+            const isSelected = selectedIdx === i;
             return (
-              <View key={i} style={{ width: COL_W, alignItems: 'center' }}>
+              <TouchableOpacity
+                key={i}
+                style={{ width: COL_W, alignItems: 'center' }}
+                onPress={() => setSelectedIdx(prev => prev === i ? null : i)}
+                activeOpacity={0.7}
+              >
                 <View style={[styles.barGroup, { height: BAR_H }]}>
-                  <View style={[styles.bar, { height: costH,  width: 11, backgroundColor: '#6B4FFF55', borderColor: '#6B4FFF99', borderWidth: 1 }]} />
-                  <View style={[styles.bar, { height: valueH, width: 11, backgroundColor: valueColor + 'BB' }]} />
+                  <View style={[styles.bar, {
+                    height: costH, width: 11,
+                    backgroundColor: isSelected ? '#6B4FFF99' : '#6B4FFF55',
+                    borderColor: '#6B4FFF', borderWidth: 1,
+                  }]} />
+                  <View style={[styles.bar, {
+                    height: valueH, width: 11,
+                    backgroundColor: isSelected ? valueColor : valueColor + 'BB',
+                  }]} />
                 </View>
-                {d.yearLabel ? (
-                  <Text style={[styles.xLabel, { color: themeColors.primary }]}>{d.yearLabel}</Text>
-                ) : (
-                  <Text style={[styles.xLabel, { color: themeColors.textSecondary }]}>{d.label}</Text>
-                )}
-              </View>
+                <Text style={[styles.xLabel, {
+                  color: isSelected ? themeColors.primary : (d.yearLabel ? themeColors.primary : themeColors.textSecondary),
+                  fontWeight: isSelected ? '700' : '400',
+                }]}>
+                  {d.yearLabel || d.label}
+                </Text>
+              </TouchableOpacity>
             );
           })}
         </View>
       </ScrollView>
+
+      {selectedIdx !== null && selectedIdx < visible.length && (
+        <SelInfoPanel sel={visible[selectedIdx]} />
+      )}
     </>
   );
 }
@@ -328,37 +402,9 @@ export function LineChart({ data }: { data: SnapData[] }) {
       </Svg>
 
       {/* 선택 정보 패널 */}
-      {selectedIdx !== null && (() => {
-        const sel = visible[selectedIdx];
-        const isProfit = sel.totalValue >= sel.totalCost;
-        const pnl = sel.totalValue - sel.totalCost;
-        return (
-          <View style={[styles.selInfo, { backgroundColor: themeColors.cardBackground, borderColor: themeColors.border }]}>
-            <Text style={[styles.selDate, { color: themeColors.text }]}>
-              {sel.yearLabel ? `${sel.yearLabel} ` : ''}{sel.label}
-            </Text>
-            <View style={styles.selRow}>
-              <View style={[styles.selDot, { backgroundColor: '#6B4FFF' }]} />
-              <Text style={[styles.selLabel, { color: themeColors.textSecondary }]}>투자원금</Text>
-              <Text style={[styles.selVal, { color: themeColors.text }]}>{fmtKRW(sel.totalCost)}</Text>
-            </View>
-            <View style={styles.selRow}>
-              <View style={[styles.selDot, { backgroundColor: isProfit ? themeColors.profit : '#C0003C' }]} />
-              <Text style={[styles.selLabel, { color: themeColors.textSecondary }]}>평가금액</Text>
-              <Text style={[styles.selVal, { color: isProfit ? themeColors.profit : '#C0003C' }]}>
-                {fmtKRW(sel.totalValue)}
-              </Text>
-            </View>
-            <View style={styles.selRow}>
-              <View style={[styles.selDot, { backgroundColor: 'transparent' }]} />
-              <Text style={[styles.selLabel, { color: themeColors.textSecondary }]}>손익</Text>
-              <Text style={[styles.selVal, { color: isProfit ? themeColors.profit : '#C0003C' }]}>
-                {isProfit ? '+' : ''}{fmtKRW(pnl)}
-              </Text>
-            </View>
-          </View>
-        );
-      })()}
+      {selectedIdx !== null && selectedIdx < visible.length && (
+        <SelInfoPanel sel={visible[selectedIdx]} />
+      )}
     </>
   );
 }
@@ -525,5 +571,30 @@ const styles = StyleSheet.create({
   selVal: {
     fontSize: 13,
     fontWeight: '700',
+  },
+  selDivider: {
+    height: 1,
+    marginVertical: 4,
+  },
+  selHoldingsTitle: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  selHoldingSymbol: {
+    fontSize: 12,
+    flex: 1,
+  },
+  selHoldingVal: {
+    fontSize: 11,
+    width: 68,
+    textAlign: 'right',
+    marginRight: 4,
+  },
+  selPnl: {
+    fontSize: 12,
+    fontWeight: '700',
+    width: 72,
+    textAlign: 'right',
   },
 });

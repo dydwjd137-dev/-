@@ -229,7 +229,15 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
       if (enriched.some(h => h.quote !== null) && computedSummary.totalValue > 0) {
         const now = new Date();
         const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        saveSnapshot({ date: today, totalValue: computedSummary.totalValue, totalCost: computedSummary.totalCost }).catch(() => {});
+        saveSnapshot({
+          date: today,
+          totalValue:  computedSummary.totalValue,
+          totalCost:   computedSummary.totalCost,
+          totalProfit: computedSummary.totalProfitLoss,
+          holdings: enriched
+            .filter(h => h.quote !== null)
+            .map(h => ({ symbol: h.ticker, value: h.currentValue, profit: h.profitLoss })),
+        }).catch(() => {});
       }
 
       // 실시간 WS 연결/재구독

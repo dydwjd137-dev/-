@@ -8,19 +8,20 @@ import { ThemeOverlay } from '../components/ThemeOverlay';
 
 /** 인증 상태에 따라 라우트 자동 보호 */
 function RouteGuard({ children }: { children: React.ReactNode }) {
-  const { user, isLoading } = useAuth();
+  const { user, isGuest, isLoading } = useAuth();
   const segments = useSegments();
   const router   = useRouter();
 
   useEffect(() => {
     if (isLoading) return;
     const inAuthGroup = segments[0] === '(auth)';
-    if (!user && !inAuthGroup) {
+    const isAuthenticated = !!user || isGuest;
+    if (!isAuthenticated && !inAuthGroup) {
       router.replace('/(auth)/login');
-    } else if (user && inAuthGroup) {
+    } else if (isAuthenticated && inAuthGroup) {
       router.replace('/(tabs)');
     }
-  }, [user, isLoading, segments]);
+  }, [user, isGuest, isLoading, segments]);
 
   return <>{children}</>;
 }

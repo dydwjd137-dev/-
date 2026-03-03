@@ -20,8 +20,22 @@ import {
   loadSnapshots,
   PortfolioSnapshot,
 } from '../../services/storage/snapshotStorage';
+import {
+  getDailyChange,
+  getWeeklyChange,
+  getMonthlyChange,
+  getYearlyChange,
+  getPerAssetDailyChange,
+  PeriodChange,
+  AssetChange,
+} from '../../utils/performanceEngine';
 
 // ── 스냅샷 데이터 빌더 ────────────────────────────────────────
+
+/** toISOString()은 UTC 기준 → KST 자정 이전 호출 시 날짜 오차. 로컬 날짜 문자열로 대체. */
+function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 function buildDailyData(snapshots: PortfolioSnapshot[], count = 30): SnapData[] {
   const result: SnapData[] = [];
@@ -29,7 +43,7 @@ function buildDailyData(snapshots: PortfolioSnapshot[], count = 30): SnapData[] 
   for (let i = count - 1; i >= 0; i--) {
     const d = new Date(now);
     d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().slice(0, 10);
+    const dateStr = localDateStr(d);
     const daySnaps = snapshots.filter(s => s.date === dateStr);
     const last = daySnaps[daySnaps.length - 1];
     result.push({
@@ -37,6 +51,8 @@ function buildDailyData(snapshots: PortfolioSnapshot[], count = 30): SnapData[] 
       yearLabel: d.getDate() === 1 ? `${d.getMonth() + 1}월` : '',
       totalValue: last?.totalValue ?? 0,
       totalCost:  last?.totalCost  ?? 0,
+      dateStr,
+      holdings: last?.holdings,
     });
   }
   return result;
@@ -51,8 +67,8 @@ function buildWeeklyData(snapshots: PortfolioSnapshot[], count = 12): SnapData[]
     weekStart.setDate(now.getDate() - dow + 1 - w * 7);
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 6);
-    const startStr = weekStart.toISOString().slice(0, 10);
-    const endStr   = weekEnd.toISOString().slice(0, 10);
+    const startStr = localDateStr(weekStart);
+    const endStr   = localDateStr(weekEnd);
     const weekSnaps = snapshots.filter(s => s.date >= startStr && s.date <= endStr);
     const last = weekSnaps[weekSnaps.length - 1];
     const isYearStart = weekStart.getDate() <= 7 && weekStart.getMonth() === 0;
@@ -61,6 +77,8 @@ function buildWeeklyData(snapshots: PortfolioSnapshot[], count = 12): SnapData[]
       yearLabel: isYearStart ? `${weekStart.getFullYear() % 100}년` : '',
       totalValue: last?.totalValue ?? 0,
       totalCost:  last?.totalCost  ?? 0,
+      dateStr: last?.date,
+      holdings: last?.holdings,
     });
   }
   return result;
@@ -79,6 +97,8 @@ function buildMonthlyData(snapshots: PortfolioSnapshot[], count = 12): SnapData[
       yearLabel: d.getMonth() === 0 ? `${d.getFullYear() % 100}년` : '',
       totalValue: last?.totalValue ?? 0,
       totalCost:  last?.totalCost  ?? 0,
+      dateStr: last?.date,
+      holdings: last?.holdings,
     });
   }
   return result;
@@ -94,6 +114,8 @@ function buildYearlyData(snapshots: PortfolioSnapshot[]): SnapData[] {
       label: `${year.slice(2)}년`,
       totalValue: last?.totalValue ?? 0,
       totalCost:  last?.totalCost  ?? 0,
+      dateStr: last?.date,
+      holdings: last?.holdings,
     };
   });
 }
@@ -101,12 +123,18 @@ function buildYearlyData(snapshots: PortfolioSnapshot[]): SnapData[] {
 // ── 기타 컴포넌트 ─────────────────────────────────────────────
 
 type SubTab = 'portfolio' | 'stocks';
+type ChangePeriod = 'daily' | 'weekly' | 'monthly' | 'yearly';
+
+const CHANGE_PERIOD_LABELS: Record<ChangePeriod, string> = {
+  daily: '일별', weekly: '주간', monthly: '월간', yearly: '연간',
+};
 
 export default function PerformanceScreen() {
   const { themeColors } = useTheme();
   const { holdings, summary, snapshotVersion } = usePortfolio();
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [subTab, setSubTab] = useState<SubTab>('portfolio');
+  const [changePeriod, setChangePeriod] = useState<ChangePeriod>('daily');
 
   function profitColor(value: number) {
     if (value > 0) return themeColors.profit;
@@ -135,6 +163,18 @@ export default function PerformanceScreen() {
   const weeklyData  = useMemo(() => buildWeeklyData(snapshots, 12),  [snapshots]);
   const monthlyData = useMemo(() => buildMonthlyData(snapshots, 12), [snapshots]);
   const yearlyData  = useMemo(() => buildYearlyData(snapshots),      [snapshots]);
+
+  // 기간별 변화 (performanceEngine)
+  const changeMap = useMemo<Record<ChangePeriod, PeriodChange>>(() => ({
+    daily:   getDailyChange(snapshots),
+    weekly:  getWeeklyChange(snapshots),
+    monthly: getMonthlyChange(snapshots),
+    yearly:  getYearlyChange(snapshots),
+  }), [snapshots]);
+  const activeChange  = changeMap[changePeriod];
+  const assetChanges  = useMemo<AssetChange[]>(() =>
+    changePeriod === 'daily' ? getPerAssetDailyChange(snapshots) : [],
+  [snapshots, changePeriod]);
 
   const totalValue = summary?.totalValue ?? 0;
   const totalCost  = summary?.totalCost  ?? 0;
@@ -234,6 +274,78 @@ export default function PerformanceScreen() {
             sub={`${holdings.length}종목`}
           />
         </View>
+      </View>
+
+      {/* ── 기간별 변화 ── */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Ionicons name="swap-vertical-outline" size={16} color={themeColors.primary} />
+          <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>기간별 변화</Text>
+        </View>
+
+        {/* 기간 선택 탭 */}
+        <View style={[styles.changePeriodBar, { backgroundColor: themeColors.cardBackground }]}>
+          {(Object.keys(CHANGE_PERIOD_LABELS) as ChangePeriod[]).map(key => (
+            <TouchableOpacity
+              key={key}
+              style={[styles.changePeriodBtn, changePeriod === key && { backgroundColor: themeColors.primary }]}
+              onPress={() => setChangePeriod(key)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.changePeriodLabel, { color: themeColors.textSecondary }, changePeriod === key && { color: '#FFFFFF' }]}>
+                {CHANGE_PERIOD_LABELS[key]}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* 변화 카드 */}
+        {activeChange.hasData ? (
+          <View style={[styles.changeCard, { backgroundColor: themeColors.cardBackground, borderColor: themeColors.border }]}>
+            <View style={styles.changeRow}>
+              <View style={styles.changeValues}>
+                <Text style={[styles.changeLabel, { color: themeColors.textSecondary }]}>평가금액 변화</Text>
+                <Text style={[styles.changeMain, { color: profitColor(activeChange.valueChange) }]}>
+                  {activeChange.valueChange >= 0 ? '+' : ''}{formatUSD(convertKRWToUSD(activeChange.valueChange))}
+                </Text>
+                <Text style={[styles.changePct, { color: profitColor(activeChange.percentChange) }]}>
+                  {activeChange.percentChange >= 0 ? '+' : ''}{activeChange.percentChange.toFixed(2)}%
+                </Text>
+              </View>
+              <View style={styles.changeValues}>
+                <Text style={[styles.changeLabel, { color: themeColors.textSecondary }]}>손익 변화</Text>
+                <Text style={[styles.changeSub, { color: profitColor(activeChange.profitChange) }]}>
+                  {activeChange.profitChange >= 0 ? '+' : ''}{formatUSD(convertKRWToUSD(activeChange.profitChange))}
+                </Text>
+              </View>
+            </View>
+            <Text style={[styles.changeDateRange, { color: themeColors.textSecondary }]}>
+              {activeChange.fromDate} → {activeChange.toDate}
+            </Text>
+          </View>
+        ) : (
+          <View style={[styles.changeCard, { backgroundColor: themeColors.cardBackground, borderColor: themeColors.border }]}>
+            <Text style={[styles.changeNoData, { color: themeColors.textSecondary }]}>비교할 스냅샷이 부족합니다</Text>
+          </View>
+        )}
+
+        {/* 종목별 기여 (일별만) */}
+        {changePeriod === 'daily' && assetChanges.length > 0 && (
+          <View style={styles.assetList}>
+            <Text style={[styles.assetListTitle, { color: themeColors.textSecondary }]}>종목별 일간 변화</Text>
+            {assetChanges.slice(0, 8).map(a => (
+              <View key={a.symbol} style={[styles.assetRow, { borderBottomColor: themeColors.border }]}>
+                <Text style={[styles.assetSymbol, { color: themeColors.text }]}>{a.symbol}</Text>
+                <Text style={[styles.assetPct, { color: profitColor(a.percentChange) }]}>
+                  {a.percentChange >= 0 ? '+' : ''}{a.percentChange.toFixed(2)}%
+                </Text>
+                <Text style={[styles.assetVal, { color: profitColor(a.valueChange) }]}>
+                  {a.valueChange >= 0 ? '+' : ''}{formatUSD(convertKRWToUSD(a.valueChange))}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
       </View>
 
       {/* ── 자산 추이 (12개월 막대, 고정) ── */}
@@ -363,4 +475,52 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
   },
+  changePeriodBar: {
+    flexDirection: 'row',
+    borderRadius: 10,
+    padding: 3,
+    marginBottom: 12,
+    gap: 2,
+  },
+  changePeriodBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  changePeriodLabel: { fontSize: 12, fontWeight: '600' },
+  changeCard: {
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  changeNoData: {
+    textAlign: 'center',
+    fontSize: 13,
+    paddingVertical: 8,
+  },
+  changeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  changeValues: { flex: 1 },
+  changeLabel: { fontSize: 11, marginBottom: 4 },
+  changeMain: { fontSize: 18, fontWeight: '700' },
+  changePct: { fontSize: 13, fontWeight: '600', marginTop: 2 },
+  changeSub: { fontSize: 15, fontWeight: '700' },
+  changeDateRange: { fontSize: 11, textAlign: 'right' },
+  assetList: { marginTop: 4 },
+  assetListTitle: { fontSize: 12, marginBottom: 8, fontWeight: '600' },
+  assetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+  },
+  assetSymbol: { flex: 1, fontSize: 13, fontWeight: '600' },
+  assetPct: { fontSize: 13, fontWeight: '600', width: 64, textAlign: 'right' },
+  assetVal: { fontSize: 12, width: 80, textAlign: 'right' },
 });
