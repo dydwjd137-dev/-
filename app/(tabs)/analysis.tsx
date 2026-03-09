@@ -10,6 +10,7 @@ import { useTheme } from '../../contexts/DisplayPreferencesContext';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { EnrichedHolding, ACCOUNT_TYPE_LABELS, ACCOUNT_TYPE_COLORS, AccountType } from '../../types/portfolio';
 import { formatKRW } from '../../utils/taxEngine';
+import { getDisplayName } from '../../constants/searchDatabase';
 
 // ── 색상 팔레트 ───────────────────────────────────────────────
 const PALETTE = [
@@ -209,7 +210,7 @@ export default function AnalysisScreen() {
                 <Text style={[styles.topRankText, { color: PALETTE[i] }]}>{i + 1}</Text>
               </View>
               <View style={styles.topInfo}>
-                <Text style={[styles.topTicker, { color: themeColors.text }]}>{h.ticker}</Text>
+                <Text style={[styles.topTicker, { color: themeColors.text }]} numberOfLines={1}>{getDisplayName(h.ticker)}</Text>
                 <View style={[styles.topBarTrack, { backgroundColor: themeColors.border }]}>
                   <View style={[styles.topBarFill, { width: `${pct}%` as any, backgroundColor: PALETTE[i] }]} />
                 </View>

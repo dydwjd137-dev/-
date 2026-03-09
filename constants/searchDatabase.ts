@@ -808,10 +808,9 @@ const KR_ETFS_RAW: R[] = [
   ['441680.KS','KODEX 미국AI테크TOP10INDXX','KODEX 미국AI테크TOP10INDXX'],
   ['489490.KS','TIGER 미국AI반도체핵심기업MV','TIGER 미국AI반도체핵심기업MV'],
   ['487290.KS','KODEX 미국AI테크TOP10+15%프리미엄초단기','KODEX 미국AI테크TOP10+15%'],
-  ['472160.KS','KODEX 미국배당커버드콜액티브','KODEX 미국배당커버드콜액티브'],
+  ['441640.KS','KODEX 미국배당커버드콜액티브','KODEX 미국배당커버드콜액티브'],
   ['466920.KS','TIGER 미국배당다우존스월배당','TIGER 미국배당다우존스월배당'],
   ['448540.KS','KODEX 미국배당프리미엄액티브','KODEX 미국배당프리미엄액티브'],
-  ['441640.KS','TIGER 미국30년국채커버드콜액티브(H)','TIGER 미국30년국채커버드콜액티브(H)'],
   ['459580.KS','ACE 미국배당다우존스커버드콜','ACE 미국배당다우존스커버드콜'],
   ['462050.KS','TIGER 미국나스닥100커버드콜(합성)','TIGER 미국나스닥100커버드콜'],
   ['400870.KS','KODEX 미국나스닥100데일리커버드콜OTM','KODEX 나스닥100데일리커버드콜'],
@@ -1256,6 +1255,18 @@ export function searchStocks(query: string, maxResults = 10): StockEntry[] {
   }
 
   return result;
+}
+
+/**
+ * 티커 → 표시 이름 변환
+ * us-etf: 티커 그대로 (SPY, QQQ 등)
+ * 그 외: 한국어 이름 우선, 없으면 영문명, 없으면 티커 그대로
+ */
+export function getDisplayName(ticker: string): string {
+  const entry = ALL_STOCKS.find(e => e.ticker === ticker);
+  if (!entry) return ticker;
+  if (entry.category === 'us-etf') return ticker; // 미국 ETF는 티커 그대로
+  return entry.nameKr ?? entry.name ?? ticker;
 }
 
 export { ALL_STOCKS };

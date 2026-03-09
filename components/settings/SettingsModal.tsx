@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, HeatmapLabelMode } from '../../contexts/DisplayPreferencesContext';
 import { ThemeMode, AccentColor, ScreenSizeMode, ACCENT_MAP } from '../../constants/themes';
+import { SnapshotManagerModal } from './SnapshotManagerModal';
 
 interface SettingsModalProps {
   visible: boolean;
@@ -157,8 +158,10 @@ function SectionTitle({
 export function SettingsModal({ visible, onClose }: SettingsModalProps) {
   const { prefs, themeColors, updatePref } = useTheme();
   const accentHex = ACCENT_MAP[prefs.accentColor];
+  const [showSnapshotManager, setShowSnapshotManager] = useState(false);
 
   return (
+    <>
     <Modal
       visible={visible}
       animationType="slide"
@@ -288,10 +291,28 @@ export function SettingsModal({ visible, onClose }: SettingsModalProps) {
             })}
           </View>
 
+          {/* ── 데이터 관리 ── */}
+          <SectionTitle title="데이터 관리" color={themeColors.textSecondary} accent={accentHex} />
+          <TouchableOpacity
+            style={[styles.menuRow, { backgroundColor: themeColors.cardBackground, borderColor: themeColors.border }]}
+            onPress={() => setShowSnapshotManager(true)}
+          >
+            <Ionicons name="albums-outline" size={18} color={accentHex} style={styles.menuIcon} />
+            <Text style={[styles.menuLabel, { color: themeColors.text }]}>스냅샷 히스토리 관리</Text>
+            <Ionicons name="chevron-forward" size={16} color={themeColors.textSecondary} />
+          </TouchableOpacity>
+
           <View style={{ height: 48 }} />
         </ScrollView>
       </View>
+
     </Modal>
+
+    <SnapshotManagerModal
+      visible={showSnapshotManager}
+      onClose={() => setShowSnapshotManager(false)}
+    />
+    </>
   );
 }
 
@@ -362,4 +383,15 @@ const styles = StyleSheet.create({
   },
 
   hint: { fontSize: 11, marginTop: 8, opacity: 0.7 },
+
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  menuIcon: { marginRight: 12 },
+  menuLabel: { flex: 1, fontSize: 14, fontWeight: '600' },
 });

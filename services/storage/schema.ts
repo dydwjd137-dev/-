@@ -9,4 +9,6 @@ export const STORAGE_KEYS = {
   EXCHANGE_RATE: '@portfolio/exchange_rate',
   CUSTOM_CATEGORIES: '@portfolio/custom_categories',
   SNAPSHOTS: '@portfolio/snapshots',
+  OTHER_ASSETS: '@portfolio/other_assets',
+  LOANS: '@portfolio/loans',
 } as const;

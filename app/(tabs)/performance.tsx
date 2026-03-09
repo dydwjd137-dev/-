@@ -11,6 +11,13 @@ import { useTheme } from '../../contexts/DisplayPreferencesContext';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import StockPerformanceTab from '../../components/performance/StockPerformanceTab';
 import { PeriodSection, BarChart, SnapData } from '../../components/performance/PortfolioCharts';
+import WeeklySummaryCard from '../../components/report/WeeklySummaryCard';
+import DailyChangeChart from '../../components/report/DailyChangeChart';
+import AssetTable from '../../components/report/AssetTable';
+import BenchmarkCompare from '../../components/report/BenchmarkCompare';
+import DividendList from '../../components/report/DividendList';
+import WeeklyBreakdownChart from '../../components/report/WeeklyBreakdownChart';
+import { WEEKLY_SAMPLE, MONTHLY_SAMPLE } from '../../components/report/sampleData';
 import {
   formatUSD,
   convertKRWToUSD,
@@ -21,14 +28,14 @@ import {
   PortfolioSnapshot,
 } from '../../services/storage/snapshotStorage';
 import {
-  getDailyChange,
-  getWeeklyChange,
-  getMonthlyChange,
-  getYearlyChange,
-  getPerAssetDailyChange,
-  PeriodChange,
-  AssetChange,
-} from '../../utils/performanceEngine';
+  getDailyReturn,
+  getWeeklyReturn,
+  getMonthlyReturn,
+  getYearlyReturn,
+  getDailyAssetContribution,
+  ReturnResult,
+  AssetContribution,
+} from '../../engine/performanceEngine';
 
 // ── 스냅샷 데이터 빌더 ────────────────────────────────────────
 
@@ -122,7 +129,8 @@ function buildYearlyData(snapshots: PortfolioSnapshot[]): SnapData[] {
 
 // ── 기타 컴포넌트 ─────────────────────────────────────────────
 
-type SubTab = 'portfolio' | 'stocks';
+type SubTab = 'portfolio' | 'stocks' | 'report';
+type ReportTab = 'weekly' | 'monthly';
 type ChangePeriod = 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 const CHANGE_PERIOD_LABELS: Record<ChangePeriod, string> = {
@@ -135,6 +143,7 @@ export default function PerformanceScreen() {
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [subTab, setSubTab] = useState<SubTab>('portfolio');
   const [changePeriod, setChangePeriod] = useState<ChangePeriod>('daily');
+  const [reportTab, setReportTab] = useState<ReportTab>('weekly');
 
   function profitColor(value: number) {
     if (value > 0) return themeColors.profit;
@@ -165,16 +174,18 @@ export default function PerformanceScreen() {
   const yearlyData  = useMemo(() => buildYearlyData(snapshots),      [snapshots]);
 
   // 기간별 변화 (performanceEngine)
-  const changeMap = useMemo<Record<ChangePeriod, PeriodChange>>(() => ({
-    daily:   getDailyChange(snapshots),
-    weekly:  getWeeklyChange(snapshots),
-    monthly: getMonthlyChange(snapshots),
-    yearly:  getYearlyChange(snapshots),
+  const changeMap = useMemo<Record<ChangePeriod, ReturnResult>>(() => ({
+    daily:   getDailyReturn(snapshots),
+    weekly:  getWeeklyReturn(snapshots),
+    monthly: getMonthlyReturn(snapshots),
+    yearly:  getYearlyReturn(snapshots),
   }), [snapshots]);
   const activeChange  = changeMap[changePeriod];
-  const assetChanges  = useMemo<AssetChange[]>(() =>
-    changePeriod === 'daily' ? getPerAssetDailyChange(snapshots) : [],
-  [snapshots, changePeriod]);
+  const assetChanges  = useMemo<AssetContribution[]>(() => {
+    if (changePeriod !== 'daily' || snapshots.length < 2) return [];
+    const sorted = [...snapshots].sort((a, b) => a.date.localeCompare(b.date));
+    return getDailyAssetContribution(sorted[sorted.length - 1], sorted[sorted.length - 2]);
+  }, [snapshots, changePeriod]);
 
   const totalValue = summary?.totalValue ?? 0;
   const totalCost  = summary?.totalCost  ?? 0;
@@ -185,9 +196,49 @@ export default function PerformanceScreen() {
   const profitCount = holdings.filter(h => h.profitLoss > 0).length;
   const lossCount   = holdings.filter(h => h.profitLoss < 0).length;
 
+  // ── 리포트용 실제 종목 데이터 빌드 ────────────────────────────
+  const reportAssets = useMemo(() => {
+    const sorted = [...snapshots].sort((a, b) => a.date.localeCompare(b.date));
+
+    const snapBefore = (daysBack: number) => {
+      const target = new Date(); target.setDate(target.getDate() - daysBack);
+      const tStr = localDateStr(target);
+      return [...sorted].reverse().find(s => s.date <= tStr) ?? sorted[0];
+    };
+    const weekSnap  = snapBefore(7);
+    const monthSnap = snapBefore(30);
+
+    return holdings.map(h => {
+      const currValue = h.currentValue ?? 0;
+      const weight = totalValue > 0 ? Math.round((currValue / totalValue) * 1000) / 10 : 0;
+
+      const prevW = weekSnap?.holdings?.find(ph => ph.symbol === h.ticker);
+      const prevWVal = prevW?.value ?? 0;
+      const weekPnlKRW = prevWVal > 0 ? currValue - prevWVal : 0;
+      const weekReturn  = prevWVal > 0 ? Math.round((weekPnlKRW / prevWVal) * 10000) / 100 : 0;
+      const weekPnl     = Math.round(convertKRWToUSD(weekPnlKRW) * 100) / 100;
+
+      const prevM = monthSnap?.holdings?.find(ph => ph.symbol === h.ticker);
+      const prevMVal = prevM?.value ?? 0;
+      const monthPnlKRW = prevMVal > 0 ? currValue - prevMVal : 0;
+      const monthReturn  = prevMVal > 0 ? Math.round((monthPnlKRW / prevMVal) * 10000) / 100 : 0;
+      const monthPnl     = Math.round(convertKRWToUSD(monthPnlKRW) * 100) / 100;
+
+      return {
+        ticker: h.ticker,
+        weight,
+        weekReturn,
+        weekPnl,
+        monthReturn,
+        monthPnl,
+        price: h.quote?.currentPrice ?? 0,
+      };
+    }).sort((a, b) => b.weight - a.weight);
+  }, [holdings, snapshots, totalValue]);
+
   const SubTabBar = (
     <View style={[styles.subTabBar, { backgroundColor: themeColors.cardBackground }]}>
-      {([['portfolio', '포트폴리오'], ['stocks', '종목 성과']] as [SubTab, string][]).map(
+      {([['portfolio', '포트폴리오'], ['stocks', '종목 성과'], ['report', '리포트']] as [SubTab, string][]).map(
         ([key, label]) => (
           <TouchableOpacity
             key={key}
@@ -229,6 +280,69 @@ export default function PerformanceScreen() {
         {SubTabBar}
         <StockPerformanceTab />
       </View>
+    );
+  }
+
+  if (subTab === 'report') {
+    return (
+      <ScrollView style={[styles.container, { backgroundColor: themeColors.background }]} contentContainerStyle={styles.content}>
+        {SubTabBar}
+
+        {/* ── 리포트 서브탭 ── */}
+        <View style={[styles.reportTabBar, { backgroundColor: themeColors.cardBackground }]}>
+          {([['weekly', '주간 리포트'], ['monthly', '월간 리포트']] as [ReportTab, string][]).map(([key, label]) => (
+            <TouchableOpacity
+              key={key}
+              style={[styles.reportTabBtn, reportTab === key && styles.reportTabBtnActive]}
+              onPress={() => setReportTab(key)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.reportTabLabel, reportTab === key && styles.reportTabLabelActive]}>
+                {label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* ── 주간 리포트 ── */}
+        {reportTab === 'weekly' && (
+          <View style={styles.reportSection}>
+            <WeeklySummaryCard data={WEEKLY_SAMPLE} />
+            <View style={styles.reportGap} />
+            <DailyChangeChart daily={WEEKLY_SAMPLE.daily} />
+            <View style={styles.reportGap} />
+            <AssetTable assets={reportAssets} mode="weekly" />
+            <View style={styles.reportGap} />
+            <BenchmarkCompare data={WEEKLY_SAMPLE.benchmark} />
+            <View style={styles.reportGap} />
+            <DividendList dividends={WEEKLY_SAMPLE.dividends} mode="weekly" />
+          </View>
+        )}
+
+        {/* ── 월간 리포트 ── */}
+        {reportTab === 'monthly' && (
+          <View style={styles.reportSection}>
+            <WeeklySummaryCard
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              data={MONTHLY_SAMPLE as any}
+              monthly
+            />
+            <View style={styles.reportGap} />
+            <WeeklyBreakdownChart data={MONTHLY_SAMPLE.weeklyBreakdown} />
+            <View style={styles.reportGap} />
+            <AssetTable assets={reportAssets} mode="monthly" />
+            <View style={styles.reportGap} />
+            <BenchmarkCompare data={MONTHLY_SAMPLE.benchmark} />
+            <View style={styles.reportGap} />
+            <DividendList
+              dividends={MONTHLY_SAMPLE.dividendBreakdown}
+              total={MONTHLY_SAMPLE.totalDividends}
+              mode="monthly"
+            />
+          </View>
+        )}
+
+      </ScrollView>
     );
   }
 
@@ -523,4 +637,35 @@ const styles = StyleSheet.create({
   assetSymbol: { flex: 1, fontSize: 13, fontWeight: '600' },
   assetPct: { fontSize: 13, fontWeight: '600', width: 64, textAlign: 'right' },
   assetVal: { fontSize: 12, width: 80, textAlign: 'right' },
+  // ── Report tab styles ──
+  reportTabBar: {
+    flexDirection: 'row',
+    borderRadius: 10,
+    padding: 3,
+    marginBottom: 16,
+    gap: 2,
+  },
+  reportTabBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  reportTabBtnActive: {
+    backgroundColor: '#6B4FFF',
+  },
+  reportTabLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#8B7FBF',
+  },
+  reportTabLabelActive: {
+    color: '#FFFFFF',
+  },
+  reportSection: {
+    gap: 0,
+  },
+  reportGap: {
+    height: 12,
+  },
 });

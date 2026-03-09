@@ -1,4 +1,5 @@
 import { EnrichedHolding, HeatmapBox, AssetCategory } from '../types/portfolio';
+import { OtherAsset } from '../types/otherAssets';
 import Colors from '../constants/Colors';
 
 export type ViewMode = 'daily' | 'cumulative';
@@ -261,6 +262,36 @@ function getSizeWeight(size: HeatmapBox['size']): number {
     case 'tiny':
       return 0.16;
   }
+}
+
+// 기타자산 → HeatmapBox 배열 생성 (changePercent=0 → 중립색)
+export function buildOtherAssetBoxes(
+  otherAssets: OtherAsset[],
+  exchangeRate: number,
+  totalPortfolioValue: number,
+  isDark: boolean = true,
+): HeatmapBox[] {
+  if (otherAssets.length === 0) return [];
+
+  const grandTotal = totalPortfolioValue + otherAssets.reduce((s, a) => {
+    return s + (a.currency === 'USD' ? a.amount * exchangeRate : a.amount);
+  }, 0);
+
+  return otherAssets.map(asset => {
+    const valueKRW = asset.currency === 'USD' ? asset.amount * exchangeRate : asset.amount;
+    const weight = grandTotal > 0 ? valueKRW / grandTotal : 0;
+    const size = calculateSize(weight);
+    const neutral = isDark ? `rgba(107, 79, 255, 0.10)` : `rgba(107, 79, 255, 0.18)`;
+    return {
+      ticker: asset.name,
+      category: '기타자산',
+      value: valueKRW,
+      changePercent: 0,
+      size,
+      color: neutral,
+      isOtherAsset: true,
+    };
+  });
 }
 
 // 카테고리별로 박스 필터링

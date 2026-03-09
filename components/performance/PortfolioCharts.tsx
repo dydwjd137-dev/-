@@ -115,10 +115,6 @@ function Legend() {
   return (
     <View style={styles.legend}>
       <View style={styles.legendItem}>
-        <View style={[styles.legendDot, { backgroundColor: '#6B4FFF55', borderWidth: 1, borderColor: '#6B4FFF' }]} />
-        <Text style={[styles.legendLabel, { color: themeColors.textSecondary }]}>투자원금</Text>
-      </View>
-      <View style={styles.legendItem}>
         <View style={[styles.legendDot, { backgroundColor: themeColors.profit + 'BB' }]} />
         <Text style={[styles.legendLabel, { color: themeColors.textSecondary }]}>평가금액</Text>
       </View>
@@ -126,8 +122,19 @@ function Legend() {
   );
 }
 
+/** 차트 하단 투자원금 텍스트 */
+function CostFooter({ cost }: { cost: number }) {
+  const { themeColors } = useTheme();
+  if (cost <= 0) return null;
+  return (
+    <Text style={[styles.costFooter, { color: themeColors.textSecondary }]}>
+      투자원금  {fmtKRW(cost)}
+    </Text>
+  );
+}
+
 // ── 막대 차트 ────────────────────────────────────────────────
-const BAR_H = 90;
+const BAR_H = 130;
 const COL_W = 38;
 
 /** 선택된 SnapData의 툴팁 패널 (BarChart / LineChart 공용) */
@@ -187,21 +194,38 @@ export function BarChart({ data }: { data: SnapData[] }) {
 
   const firstIdx = data.findIndex(d => d.totalValue > 0 || d.totalCost > 0);
   const visible = firstIdx >= 0 ? data.slice(firstIdx) : [];
-  const maxVal = visible.length > 0 ? Math.max(...visible.map(d => Math.max(d.totalValue, d.totalCost)), 1) : 1;
 
   if (visible.length === 0) {
     return <Text style={[styles.chartEmpty, { color: themeColors.textSecondary }]}>새로고침 후 차트가 표시됩니다</Text>;
   }
 
+  // min-max 스케일: 데이터 범위에 맞게 Y축 확대
+  const allVals = visible.flatMap(d => [d.totalValue, d.totalCost]).filter(v => v > 0);
+  const maxVal  = Math.max(...allVals, 1);
+  const minVal  = Math.min(...allVals);
+  const range   = maxVal - minVal || maxVal * 0.1;
+  const baseVal = Math.max(0, minVal - range * 0.2); // 최솟값 아래 20% 여백
+  const capVal  = maxVal + range * 0.05;
+  const totalRange = capVal - baseVal;
+
+  const toBarH = (v: number) => Math.max(2, ((v - baseVal) / totalRange) * BAR_H);
+
+  const latestCost = visible[visible.length - 1]?.totalCost ?? 0;
+
   return (
     <>
       <Legend />
+      {/* Y축 범위 힌트 */}
+      <View style={styles.yAxisRow}>
+        <Text style={[styles.yAxisLabel, { color: themeColors.textSecondary }]}>{fmtKRW(capVal)}</Text>
+        <Text style={[styles.yAxisLabel, { color: themeColors.textSecondary }]}>{fmtKRW(baseVal > 0 ? baseVal : minVal)}</Text>
+      </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <View style={styles.barRow}>
           {visible.map((d, i) => {
-            const costH  = Math.max(2, (d.totalCost  / maxVal) * BAR_H);
-            const valueH = Math.max(2, (d.totalValue / maxVal) * BAR_H);
-            const valueColor = d.totalValue >= d.totalCost ? themeColors.profit : '#C0003C';
+            const valueH   = toBarH(d.totalValue);
+            const hasProfit  = d.totalValue >= d.totalCost;
+            const barColor   = hasProfit ? themeColors.profit : '#C0003C';
             const isSelected = selectedIdx === i;
             return (
               <TouchableOpacity
@@ -210,15 +234,11 @@ export function BarChart({ data }: { data: SnapData[] }) {
                 onPress={() => setSelectedIdx(prev => prev === i ? null : i)}
                 activeOpacity={0.7}
               >
-                <View style={[styles.barGroup, { height: BAR_H }]}>
+                <View style={{ height: BAR_H, justifyContent: 'flex-end', alignItems: 'center' }}>
                   <View style={[styles.bar, {
-                    height: costH, width: 11,
-                    backgroundColor: isSelected ? '#6B4FFF99' : '#6B4FFF55',
-                    borderColor: '#6B4FFF', borderWidth: 1,
-                  }]} />
-                  <View style={[styles.bar, {
-                    height: valueH, width: 11,
-                    backgroundColor: isSelected ? valueColor : valueColor + 'BB',
+                    height: valueH,
+                    width: 16,
+                    backgroundColor: isSelected ? barColor : barColor + 'BB',
                   }]} />
                 </View>
                 <Text style={[styles.xLabel, {
@@ -233,6 +253,7 @@ export function BarChart({ data }: { data: SnapData[] }) {
         </View>
       </ScrollView>
 
+      <CostFooter cost={latestCost} />
       {selectedIdx !== null && selectedIdx < visible.length && (
         <SelInfoPanel sel={visible[selectedIdx]} />
       )}
@@ -241,7 +262,7 @@ export function BarChart({ data }: { data: SnapData[] }) {
 }
 
 // ── 라인 차트 (SVG 에어리어) ─────────────────────────────────
-const LINE_H = 130;
+const LINE_H = 160;
 const PAD_H  = 6;
 const PAD_V  = 10;
 
@@ -270,19 +291,23 @@ export function LineChart({ data }: { data: SnapData[] }) {
     return <Text style={[styles.chartEmpty, { color: themeColors.textSecondary }]}>새로고침 후 차트가 표시됩니다</Text>;
   }
 
-  const maxVal = Math.max(...visible.map(d => Math.max(d.totalValue, d.totalCost)), 1);
+  // min-max 스케일: 데이터 범위에 맞게 Y축 확대
+  const allVals2 = visible.flatMap(d => [d.totalValue, d.totalCost]).filter(v => v > 0);
+  const maxVal  = Math.max(...allVals2, 1);
+  const minVal  = Math.min(...allVals2);
+  const range2  = maxVal - minVal || maxVal * 0.1;
+  const baseVal = Math.max(0, minVal - range2 * 0.2);
+  const capVal  = maxVal + range2 * 0.05;
+  const totalRange = capVal - baseVal;
 
   const xAt = (i: number) => PAD_H + (i / (vn - 1)) * usableW;
-  const yAtVal = (v: number) => PAD_V + (1 - v / maxVal) * usableH;
+  const yAtVal = (v: number) => PAD_V + (1 - (v - baseVal) / totalRange) * usableH;
 
   const vPts: Pt[] = visible.map((d, i) => ({ x: xAt(i), y: yAtVal(d.totalValue) }));
   const cPts: Pt[] = visible.map((d, i) => ({ x: xAt(i), y: yAtVal(d.totalCost)  }));
 
   const costLinePath  = pathFromPts(cPts);
   const valueLinePath = pathFromPts(vPts);
-
-  // 투자원금 그라데이션 영역 (항상 표시)
-  const costAreaD = `${costLinePath} L ${cPts[vn - 1].x.toFixed(1)},${bottomY} L ${cPts[0].x.toFixed(1)},${bottomY} Z`;
 
   // 교차 세그먼트 (초록 / 와인)
   const segments = buildCrossoverSegments(vPts, cPts);
@@ -296,12 +321,13 @@ export function LineChart({ data }: { data: SnapData[] }) {
   return (
     <>
       <Legend />
+      {/* Y축 최고/최저 힌트 */}
+      <View style={styles.yAxisRow}>
+        <Text style={[styles.yAxisLabel, { color: themeColors.textSecondary }]}>{fmtKRW(capVal)}</Text>
+        <Text style={[styles.yAxisLabel, { color: themeColors.textSecondary }]}>{fmtKRW(baseVal > 0 ? baseVal : minVal)}</Text>
+      </View>
       <Svg width={W} height={LINE_H + 18}>
         <Defs>
-          <LinearGradient id="lcCostGrad" x1="0" y1="0" x2="0" y2={LINE_H} gradientUnits="userSpaceOnUse">
-            <Stop offset="0" stopColor="#6B4FFF" stopOpacity="0.45" />
-            <Stop offset="1" stopColor="#6B4FFF" stopOpacity="0.02" />
-          </LinearGradient>
           <LinearGradient id="lcGreenGrad" x1="0" y1="0" x2="0" y2={LINE_H} gradientUnits="userSpaceOnUse">
             <Stop offset="0" stopColor="#00FFA3" stopOpacity="0.4" />
             <Stop offset="1" stopColor="#00FFA3" stopOpacity="0.03" />
@@ -311,9 +337,6 @@ export function LineChart({ data }: { data: SnapData[] }) {
             <Stop offset="1" stopColor="#C0003C" stopOpacity="0.03" />
           </LinearGradient>
         </Defs>
-
-        {/* 투자원금 그라데이션 배경 */}
-        <Path d={costAreaD} fill="url(#lcCostGrad)" />
 
         {/* 교차점별 초록/와인 영역 */}
         {segments.map((seg, idx) => {
@@ -328,9 +351,6 @@ export function LineChart({ data }: { data: SnapData[] }) {
             />
           );
         })}
-
-        {/* 투자원금 라인 */}
-        <Path d={costLinePath} fill="none" stroke="#6B4FFF" strokeWidth={1.5} strokeOpacity={0.85} />
 
         {/* 평가금액 라인 */}
         <Path
@@ -401,6 +421,7 @@ export function LineChart({ data }: { data: SnapData[] }) {
         })}
       </Svg>
 
+      <CostFooter cost={visible[visible.length - 1]?.totalCost ?? 0} />
       {/* 선택 정보 패널 */}
       {selectedIdx !== null && selectedIdx < visible.length && (
         <SelInfoPanel sel={visible[selectedIdx]} />
@@ -478,10 +499,26 @@ const styles = StyleSheet.create({
   legendLabel: {
     fontSize: 11,
   },
+  costFooter: {
+    fontSize: 11,
+    marginTop: 8,
+    textAlign: 'right',
+    opacity: 0.6,
+  },
   chartEmpty: {
     fontSize: 13,
     textAlign: 'center',
     paddingVertical: 20,
+  },
+  yAxisRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+    paddingHorizontal: 2,
+  },
+  yAxisLabel: {
+    fontSize: 9,
+    opacity: 0.7,
   },
   barRow: {
     flexDirection: 'row',

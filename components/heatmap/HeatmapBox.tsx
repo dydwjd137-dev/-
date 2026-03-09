@@ -38,6 +38,9 @@ export function HeatmapBox({ box, rect, onPress, showKRW, exchangeRate, labelMod
 
   // 표시할 라벨 결정 (searchDatabase 룩업)
   const displayLabel = useMemo(() => {
+    // 기타자산: ticker가 곧 표시명 (lookup 불필요)
+    if (box.isOtherAsset) return box.ticker;
+
     const entry = ALL_STOCKS.find((e) => e.ticker === box.ticker);
 
     if (!entry) return box.ticker;
@@ -82,7 +85,7 @@ export function HeatmapBox({ box, rect, onPress, showKRW, exchangeRate, labelMod
           {displayLabel}
         </Text>
       )}
-      {showPercent && (
+      {showPercent && !box.isOtherAsset && (
         <Text style={[styles.percent, { fontSize: percentFontSize, color: percentColor }]}>
           {formatPercent(box.changePercent)}
         </Text>

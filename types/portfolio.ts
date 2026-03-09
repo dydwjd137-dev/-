@@ -122,6 +122,7 @@ export interface HeatmapBox {
   changePercent: number;
   size: 'tiny' | 'small' | 'medium' | 'large';
   color: string; // 배경색 (성과 기반)
+  isOtherAsset?: boolean; // 기타자산 여부 (로고 스킵, % 표시 생략)
 }
 
 export interface DividendCalendarEvent {

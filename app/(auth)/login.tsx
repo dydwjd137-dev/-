@@ -20,7 +20,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  Image,
 } from 'react-native';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
@@ -95,7 +94,10 @@ export default function LoginScreen() {
         {/* 게스트 버튼 */}
         <TouchableOpacity
           style={[styles.guestBtn, { borderColor: themeColors.border, backgroundColor: themeColors.cardBackground }]}
-          onPress={continueAsGuest}
+          onPress={async () => {
+            await continueAsGuest();
+            router.replace('/(tabs)');
+          }}
           activeOpacity={0.8}
         >
           <Ionicons name="bar-chart-outline" size={18} color={themeColors.primary} />

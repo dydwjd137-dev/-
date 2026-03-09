@@ -8,6 +8,16 @@ import {
 
 const BASE = `${config.backendUrl}/api`;
 
+/** Yahoo Finance 심볼 → Twelve Data 심볼 변환 */
+function yahooToTD(ticker: string): string {
+  if (ticker.endsWith('.KS') || ticker.endsWith('.KQ')) return `${ticker.split('.')[0]}:KRX`;
+  if (ticker.endsWith('.T'))  return `${ticker.split('.')[0]}:TSE`;
+  if (ticker.endsWith('.HK')) return `${ticker.split('.')[0]}:HKEX`;
+  if (ticker.endsWith('.SS') || ticker.endsWith('.SZ')) return `${ticker.split('.')[0]}:XSHG`;
+  if (/-USD[T]?$/.test(ticker)) return ticker.replace('-', '/');
+  return ticker;
+}
+
 interface TDCandle {
   datetime: string;
   close: string;
@@ -63,14 +73,16 @@ export class TwelveDataPerformanceService implements IStockPerformanceService {
 
     const { interval, extra } = periodToParams(period, customRange);
 
+    const tdSymbols = symbols.map(yahooToTD);
+
     const results = await Promise.allSettled(
-      symbols.map(sym => fetchTimeSeries(sym, interval, extra)),
+      tdSymbols.map(sym => fetchTimeSeries(sym, interval, extra)),
     );
 
     const output: StockPerformanceData[] = [];
 
     results.forEach((result, idx) => {
-      const symbol = symbols[idx];
+      const symbol = symbols[idx]; // 원본 Yahoo 심볼 유지 (화면 표시용)
       if (result.status === 'rejected') return;
 
       const data = result.value;

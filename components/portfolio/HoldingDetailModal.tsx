@@ -9,6 +9,8 @@ import {
   TextInput,
   Alert,
   Image,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../contexts/DisplayPreferencesContext';
@@ -34,6 +36,7 @@ import {
   formatPercent,
 } from '../../utils/portfolioCalculations';
 import { usePortfolio } from '../../contexts/PortfolioContext';
+import { getDisplayName } from '../../constants/searchDatabase';
 import {
   loadCustomCategories,
   saveCustomCategory,
@@ -320,13 +323,24 @@ export function HoldingDetailModal({
         <View style={[styles.modalContainer, { backgroundColor: themeColors.background }]}>
           {/* 헤더 */}
           <View style={[styles.header, { borderBottomColor: themeColors.border }]}>
-            <Text style={[styles.ticker, { color: themeColors.text }]}>{holding.ticker}</Text>
+            <View>
+              <Text style={[styles.ticker, { color: themeColors.text }]}>{getDisplayName(holding.ticker)}</Text>
+              {getDisplayName(holding.ticker) !== holding.ticker && (
+                <Text style={[styles.tickerCode, { color: themeColors.textSecondary }]}>{holding.ticker}</Text>
+              )}
+            </View>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={28} color={themeColors.text} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 24 }}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <ScrollView
+            style={styles.content}
+            contentContainerStyle={{ paddingBottom: 48 }}
+            keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled={true}
+          >
             {/* 현재가 */}
             <View style={styles.priceSection}>
               {logoUri && logoStep !== 'none' && (
@@ -568,6 +582,7 @@ export function HoldingDetailModal({
               </TouchableOpacity>
             )}
           </ScrollView>
+          </KeyboardAvoidingView>
         </View>
       </View>
 
@@ -828,8 +843,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   ticker: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: 'bold',
+  },
+  tickerCode: {
+    fontSize: 12,
+    marginTop: 2,
   },
   closeButton: {
     padding: 4,

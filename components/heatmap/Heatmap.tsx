@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, useColorScheme } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, useColorScheme } from 'react-native';
 import { EnrichedHolding } from '../../types/portfolio';
+import { OtherAsset } from '../../types/otherAssets';
 import { HeatmapBox } from './HeatmapBox';
-import { generateHeatmapLayout } from '../../utils/heatmapGenerator';
+import { generateHeatmapLayout, buildOtherAssetBoxes, HeatmapCategory } from '../../utils/heatmapGenerator';
 import { HoldingDetailModal } from '../portfolio/HoldingDetailModal';
 import { formatPercent } from '../../utils/portfolioCalculations';
 import { squarifiedTreemap, TmRect, TmNode } from '../../utils/treemapLayout';
@@ -26,9 +27,12 @@ interface HeatmapProps {
   viewMode: ViewMode;
   showKRW: boolean;
   exchangeRate: number;
+  otherAssets?: OtherAsset[];
+  showOtherAssetsInHeatmap?: boolean;
+  onToggleOtherAssets?: () => void;
 }
 
-export function Heatmap({ holdings, viewMode, showKRW, exchangeRate }: HeatmapProps) {
+export function Heatmap({ holdings, viewMode, showKRW, exchangeRate, otherAssets = [], showOtherAssetsInHeatmap = false, onToggleOtherAssets }: HeatmapProps) {
   const { prefs, themeColors } = useTheme();
   const systemScheme = useColorScheme();
   const isDark =
@@ -39,9 +43,37 @@ export function Heatmap({ holdings, viewMode, showKRW, exchangeRate }: HeatmapPr
   const [modalVisible, setModalVisible] = useState(false);
   const [containerWidth, setContainerWidth] = useState(0);
 
-  const heatmapData = useMemo(
+  const stockHeatmapData = useMemo(
     () => generateHeatmapLayout(holdings, viewMode, isDark),
     [holdings, viewMode, isDark],
+  );
+
+  const totalStockValue = useMemo(
+    () => stockHeatmapData.reduce((s, c) => s + c.totalValue, 0),
+    [stockHeatmapData],
+  );
+
+  // 기타자산 카테고리 (토글 ON일 때만)
+  const otherAssetCategory = useMemo((): HeatmapCategory | null => {
+    if (!showOtherAssetsInHeatmap || otherAssets.length === 0) return null;
+    const boxes = buildOtherAssetBoxes(otherAssets, exchangeRate, totalStockValue, isDark);
+    if (boxes.length === 0) return null;
+    const totalValue = boxes.reduce((s, b) => s + b.value, 0);
+    const neutral = isDark ? `rgba(107, 79, 255, 0.15)` : `rgba(107, 79, 255, 0.22)`;
+    return {
+      category: '기타자산',
+      boxes: [boxes],
+      profitLossPercent: 0,
+      dailyChangePercent: 0,
+      totalValue,
+      totalCost: totalValue,
+      color: neutral,
+    };
+  }, [showOtherAssetsInHeatmap, otherAssets, exchangeRate, totalStockValue, isDark]);
+
+  const heatmapData = useMemo(
+    () => otherAssetCategory ? [...stockHeatmapData, otherAssetCategory] : stockHeatmapData,
+    [stockHeatmapData, otherAssetCategory],
   );
 
   const containerHeight = containerWidth > 0 ? containerWidth * ASPECT_RATIO : 0;
@@ -206,6 +238,19 @@ export function Heatmap({ holdings, viewMode, showKRW, exchangeRate }: HeatmapPr
           })}
       </View>
 
+      {/* 기타자산 토글 버튼 */}
+      {onToggleOtherAssets && otherAssets.length > 0 && (
+        <TouchableOpacity
+          style={[styles.otherAssetToggle, { backgroundColor: showOtherAssetsInHeatmap ? themeColors.primary : themeColors.cardBackground, borderColor: themeColors.primary }]}
+          onPress={onToggleOtherAssets}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.otherAssetToggleText, { color: showOtherAssetsInHeatmap ? '#FFF' : themeColors.primary }]}>
+            {showOtherAssetsInHeatmap ? '기타자산 ✓' : '기타자산 +'}
+          </Text>
+        </TouchableOpacity>
+      )}
+
       <HoldingDetailModal
         visible={modalVisible}
         holding={selectedHolding}
@@ -260,5 +305,17 @@ const styles = StyleSheet.create({
   emptySubtext: {
     fontSize: 14,
     opacity: 0.6,
+  },
+  otherAssetToggle: {
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  otherAssetToggleText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

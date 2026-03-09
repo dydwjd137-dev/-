@@ -1,15 +1,19 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../contexts/DisplayPreferencesContext';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { ACCOUNT_TYPE_COLORS } from '../../types/portfolio';
 import { calculateTaxSummary, formatKRW, AccountTaxResult } from '../../utils/taxEngine';
+import { getTaxAdvice, TaxAdviceResponse } from '../../services/api/claude';
+import TaxAdviceView from '../../components/ai/TaxAdviceView';
 
 // ── 계좌 카드 컴포넌트 ──────────────────────────────────────
 function AccountCard({ result }: { result: AccountTaxResult }) {
@@ -82,10 +86,44 @@ export default function TaxScreen() {
   const { themeColors } = useTheme();
   const { holdings, exchangeRate } = usePortfolio();
 
+  const [aiAdvice, setAiAdvice] = useState<TaxAdviceResponse | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
   const taxSummary = useMemo(() => {
     if (holdings.length === 0) return null;
     return calculateTaxSummary(holdings, exchangeRate);
   }, [holdings, exchangeRate]);
+
+  const handleAiAdvice = async () => {
+    if (!taxSummary) return;
+    setAiLoading(true);
+    setAiError(null);
+    setAiAdvice(null);
+    try {
+      const result = await getTaxAdvice({
+        byAccount: taxSummary.byAccount.map(r => ({
+          accountType: r.accountType,
+          label: r.label,
+          totalValue: r.totalValue,
+          unrealizedGain: r.unrealizedGain,
+          capitalGainsTax: r.capitalGainsTax,
+          dividendTax: r.dividendTax,
+          holdingCount: r.holdingCount,
+        })),
+        totalTax: taxSummary.totalTax,
+        totalTaxSaved: taxSummary.totalTaxSaved,
+        annualDividendTotal: taxSummary.annualDividendTotal,
+        comprehensiveTaxRisk: taxSummary.comprehensiveTaxRisk,
+        exchangeRate,
+      });
+      setAiAdvice(result);
+    } catch {
+      setAiError('AI 분석에 실패했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   if (holdings.length === 0) {
     return (
@@ -210,6 +248,63 @@ export default function TaxScreen() {
             <Text style={[styles.tipText, { color: themeColors.text }]}>{tip}</Text>
           </View>
         ))}
+      </View>
+
+      {/* ── AI 절세 어드바이저 ── */}
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: themeColors.text }]}>AI 절세 어드바이저</Text>
+        <View style={[styles.aiCard, { backgroundColor: themeColors.cardBackground, borderColor: themeColors.border }]}>
+          <View style={styles.aiCardHeader}>
+            <View style={styles.aiCardTitleRow}>
+              <Ionicons name="sparkles" size={18} color="#A855F7" />
+              <Text style={[styles.aiCardTitle, { color: themeColors.text }]}>계좌별 절세 전략 분석</Text>
+            </View>
+            <Text style={[styles.aiCardDesc, { color: themeColors.textSecondary }]}>
+              내 포트폴리오를 AI가 분석하여 절세 효율을 높이는 계좌 운용 전략을 제안합니다.
+            </Text>
+          </View>
+
+          {!aiAdvice && !aiLoading && (
+            <TouchableOpacity
+              style={[styles.aiBtn, { backgroundColor: '#A855F7' }]}
+              onPress={handleAiAdvice}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="sparkles" size={16} color="#fff" />
+              <Text style={styles.aiBtnText}>AI 분석 시작</Text>
+            </TouchableOpacity>
+          )}
+
+          {aiLoading && (
+            <View style={styles.aiLoading}>
+              <ActivityIndicator size="small" color="#A855F7" />
+              <Text style={[styles.aiLoadingText, { color: themeColors.textSecondary }]}>분석 중…</Text>
+            </View>
+          )}
+
+          {aiError && (
+            <View style={styles.aiErrorRow}>
+              <Text style={[styles.aiErrorText, { color: themeColors.loss }]}>{aiError}</Text>
+              <TouchableOpacity onPress={handleAiAdvice} activeOpacity={0.8}>
+                <Text style={[styles.aiRetry, { color: '#A855F7' }]}>다시 시도</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {aiAdvice && (
+            <View style={styles.aiResultWrap}>
+              <TaxAdviceView data={aiAdvice} />
+              <TouchableOpacity
+                style={[styles.aiRefreshBtn, { borderColor: '#A855F7' }]}
+                onPress={handleAiAdvice}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="refresh" size={14} color="#A855F7" />
+                <Text style={[styles.aiRefreshText, { color: '#A855F7' }]}>다시 분석</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       </View>
 
       {/* ── 면책 안내 ── */}
@@ -468,4 +563,22 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 18,
   },
+
+  // ── AI 절세 어드바이저 ──
+  aiCard: { borderRadius: 14, padding: 16, borderWidth: 1, gap: 12 },
+  aiCardHeader: { gap: 8 },
+  aiCardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  aiCardTitle: { fontSize: 15, fontWeight: '700' },
+  aiCardDesc: { fontSize: 13, lineHeight: 19 },
+  aiBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 10 },
+  aiBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  aiLoading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 12 },
+  aiLoadingText: { fontSize: 13 },
+  aiErrorRow: { gap: 8, alignItems: 'center' },
+  aiErrorText: { fontSize: 13, textAlign: 'center' },
+  aiRetry: { fontSize: 13, textDecorationLine: 'underline' },
+  aiResultWrap: { gap: 12 },
+  aiResult: { fontSize: 14, lineHeight: 22 },
+  aiRefreshBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, borderRadius: 8, borderWidth: 1 },
+  aiRefreshText: { fontSize: 13, fontWeight: '600' },
 });

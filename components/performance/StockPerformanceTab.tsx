@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -26,9 +26,12 @@ export default function StockPerformanceTab() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchRef = useRef(0);
+  // holdings를 ref로 관리 → load가 holdings에 직접 의존하지 않아 WS 시세 업데이트 시 재호출 방지
+  const holdingsRef = useRef(holdings);
+  holdingsRef.current = holdings;
 
   const load = useCallback(async (p: Period, range?: CustomRange) => {
-    const symbols = [...new Set(holdings.map(h => h.ticker))];
+    const symbols = [...new Set(holdingsRef.current.map(h => h.ticker))];
     if (symbols.length === 0) return;
     if (p === 'custom' && (!range?.startDate || !range?.endDate)) return;
 
@@ -47,11 +50,19 @@ export default function StockPerformanceTab() {
     } finally {
       if (token === fetchRef.current) setLoading(false);
     }
-  }, [holdings]);
+  }, []); // holdings 제거: holdingsRef.current로 접근하므로 deps 불필요
 
+  // ticker 목록 변화 감지용 키 (시세 변동은 무시, 종목 추가/삭제만 감지)
+  const tickerKey = useMemo(
+    () => holdings.map(h => h.ticker).sort().join(','),
+    [holdings],
+  );
+
+  // load는 stable(deps:[])이므로 period 또는 tickerKey 변경 시에만 실행
+  // WS 시세 업데이트는 tickerKey를 변경하지 않아 재호출되지 않음
   useEffect(() => {
     if (period !== 'custom') load(period);
-  }, [period, load]);
+  }, [period, tickerKey, load]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePeriodChange = (p: Period) => {
     setPeriod(p);

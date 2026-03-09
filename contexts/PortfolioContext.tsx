@@ -7,13 +7,26 @@ import React, {
   useCallback,
   ReactNode,
 } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { config } from '../config';
 import {
   Holding,
   EnrichedHolding,
   PortfolioSummary,
 } from '../types/portfolio';
+import { OtherAsset, Loan } from '../types/otherAssets';
 import { HoldingsStorage } from '../services/storage/holdingsStorage';
+import { STORAGE_KEYS } from '../services/storage/schema';
+import {
+  getOtherAssets,
+  addOtherAsset as storageAddOtherAsset,
+  updateOtherAsset as storageUpdateOtherAsset,
+  deleteOtherAsset as storageDeleteOtherAsset,
+  getLoans,
+  addLoan as storageAddLoan,
+  updateLoan as storageUpdateLoan,
+  deleteLoan as storageDeleteLoan,
+} from '../services/storage/otherAssetsStorage';
 import { saveSnapshot } from '../services/storage/snapshotStorage';
 import { backfillSnapshots } from '../services/storage/snapshotBackfill';
 import { YahooFinanceService } from '../services/api/yahooFinance';
@@ -37,6 +50,20 @@ interface PortfolioContextType {
   refreshPrices: () => Promise<void>;
   validateTicker: (ticker: string) => Promise<boolean>;
   snapshotVersion: number; // 백필 완료 시 증가 → 성과 탭 재로드 트리거
+  bumpSnapshotVersion: () => void; // 수동 스냅샷 변경 후 성과 탭 재로드
+  // ── 기타자산 & 대출 ──
+  otherAssets: OtherAsset[];
+  loans: Loan[];
+  otherAssetsTotal: number; // KRW 환산 합계
+  loansTotal: number;       // KRW 합계
+  showOtherAssetsInHeatmap: boolean;
+  addOtherAsset: (asset: Omit<OtherAsset, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateOtherAsset: (id: string, updates: Partial<Omit<OtherAsset, 'id' | 'createdAt'>>) => Promise<void>;
+  deleteOtherAsset: (id: string) => Promise<void>;
+  addLoan: (loan: Omit<Loan, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateLoan: (id: string, updates: Partial<Omit<Loan, 'id' | 'createdAt'>>) => Promise<void>;
+  deleteLoan: (id: string) => Promise<void>;
+  toggleOtherAssetsInHeatmap: () => void;
 }
 
 const PortfolioContext = createContext<PortfolioContextType | undefined>(
@@ -74,6 +101,9 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [exchangeRate, setExchangeRate] = useState<number>(1450);
   const [snapshotVersion, setSnapshotVersion] = useState(0);
+  const [otherAssets, setOtherAssets] = useState<OtherAsset[]>([]);
+  const [loans, setLoans] = useState<Loan[]>([]);
+  const [showOtherAssetsInHeatmap, setShowOtherAssetsInHeatmap] = useState(false);
 
   // ── 포트폴리오 실시간 WS ──
   const wsRef           = useRef<WebSocket | null>(null);
@@ -173,6 +203,23 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
       console.log('[PortfolioWS] closed');
       subscribedRef.current.clear();
     };
+  }, []);
+
+  // 앱 시작 시 기타자산 & 대출 로드
+  useEffect(() => {
+    (async () => {
+      const [assets, loanList] = await Promise.all([getOtherAssets(), getLoans()]);
+      setOtherAssets(assets);
+      setLoans(loanList);
+      // 히트맵 표시 설정 로드
+      const raw = await AsyncStorage.getItem(STORAGE_KEYS.USER_PREFERENCES);
+      if (raw) {
+        const prefs = JSON.parse(raw);
+        if (typeof prefs.showOtherAssetsInHeatmap === 'boolean') {
+          setShowOtherAssetsInHeatmap(prefs.showOtherAssetsInHeatmap);
+        }
+      }
+    })().catch(() => {});
   }, []);
 
   // 앱 시작 시 보유 종목 로드
@@ -362,6 +409,52 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // ── 기타자산 CRUD ──────────────────────────────────────────
+  async function addOtherAsset(asset: Omit<OtherAsset, 'id' | 'createdAt' | 'updatedAt'>) {
+    const saved = await storageAddOtherAsset(asset);
+    setOtherAssets(prev => [...prev, saved]);
+  }
+
+  async function updateOtherAsset(id: string, updates: Partial<Omit<OtherAsset, 'id' | 'createdAt'>>) {
+    await storageUpdateOtherAsset(id, updates);
+    setOtherAssets(prev => prev.map(a => a.id === id ? { ...a, ...updates, updatedAt: new Date().toISOString() } : a));
+  }
+
+  async function deleteOtherAsset(id: string) {
+    await storageDeleteOtherAsset(id);
+    setOtherAssets(prev => prev.filter(a => a.id !== id));
+  }
+
+  // ── 대출 CRUD ──────────────────────────────────────────────
+  async function addLoan(loan: Omit<Loan, 'id' | 'createdAt' | 'updatedAt'>) {
+    const saved = await storageAddLoan(loan);
+    setLoans(prev => [...prev, saved]);
+  }
+
+  async function updateLoan(id: string, updates: Partial<Omit<Loan, 'id' | 'createdAt'>>) {
+    await storageUpdateLoan(id, updates);
+    setLoans(prev => prev.map(l => l.id === id ? { ...l, ...updates, updatedAt: new Date().toISOString() } : l));
+  }
+
+  async function deleteLoan(id: string) {
+    await storageDeleteLoan(id);
+    setLoans(prev => prev.filter(l => l.id !== id));
+  }
+
+  // ── 히트맵 기타자산 토글 ────────────────────────────────────
+  function toggleOtherAssetsInHeatmap() {
+    setShowOtherAssetsInHeatmap(prev => {
+      const next = !prev;
+      AsyncStorage.getItem(STORAGE_KEYS.USER_PREFERENCES)
+        .then(raw => {
+          const prefs = raw ? JSON.parse(raw) : {};
+          return AsyncStorage.setItem(STORAGE_KEYS.USER_PREFERENCES, JSON.stringify({ ...prefs, showOtherAssetsInHeatmap: next }));
+        })
+        .catch(() => {});
+      return next;
+    });
+  }
+
   // 티커 유효성 검증
   async function validateTicker(ticker: string): Promise<boolean> {
     try {
@@ -371,6 +464,12 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
       return false;
     }
   }
+
+  const otherAssetsTotal = otherAssets.reduce((sum, a) => {
+    const krw = a.currency === 'USD' ? a.amount * exchangeRate : a.amount;
+    return sum + krw;
+  }, 0);
+  const loansTotal = loans.reduce((sum, l) => sum + l.amount, 0);
 
   return (
     <PortfolioContext.Provider
@@ -382,11 +481,24 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
         error,
         exchangeRate,
         snapshotVersion,
+        bumpSnapshotVersion: () => setSnapshotVersion(v => v + 1),
         addHolding,
         updateHolding,
         deleteHolding,
         refreshPrices,
         validateTicker,
+        otherAssets,
+        loans,
+        otherAssetsTotal,
+        loansTotal,
+        showOtherAssetsInHeatmap,
+        addOtherAsset,
+        updateOtherAsset,
+        deleteOtherAsset,
+        addLoan,
+        updateLoan,
+        deleteLoan,
+        toggleOtherAssetsInHeatmap,
       }}
     >
       {children}

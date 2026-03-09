@@ -15,6 +15,7 @@ import { useTheme } from '../../contexts/DisplayPreferencesContext';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { formatUSD } from '../../utils/portfolioCalculations';
 import { DividendInfo, EnrichedHolding } from '../../types/portfolio';
+import { getDisplayName } from '../../constants/searchDatabase';
 
 // ─── 배당 성장 헬퍼 ────────────────────────────────────────
 
@@ -385,7 +386,7 @@ function PortfolioView({
             >
               <View style={[styles.colorDot, { backgroundColor: t.color }]} />
             </TouchableOpacity>
-            <Text style={[styles.tickerName, { color: themeColors.text }]}>{t.ticker}</Text>
+            <Text style={[styles.tickerName, { color: themeColors.text }]} numberOfLines={1}>{getDisplayName(t.ticker)}</Text>
             <View style={[styles.barTrack, { backgroundColor: themeColors.cardBackground }]}>
               <View
                 style={[
@@ -418,7 +419,7 @@ function PortfolioView({
             <View style={[styles.colorSheet, { backgroundColor: themeColors.cardBackground, borderColor: themeColors.border }]}>
               <View style={styles.colorSheetHeader}>
                 <View style={[styles.colorPreviewDot, { backgroundColor: colorPickerTicker?.color }]} />
-                <Text style={[styles.colorSheetTitle, { color: themeColors.text }]}>{colorPickerTicker?.ticker} 색상</Text>
+                <Text style={[styles.colorSheetTitle, { color: themeColors.text }]}>{colorPickerTicker ? getDisplayName(colorPickerTicker.ticker) : ''} 색상</Text>
                 <TouchableOpacity onPress={() => setColorPickerTicker(null)}>
                   <Ionicons name="close" size={22} color={themeColors.text} />
                 </TouchableOpacity>
@@ -519,7 +520,7 @@ function DonutChart({ data, total }: { data: TickerDiv[]; total: number }) {
         {data.map((t) => (
           <View key={t.ticker} style={styles.legendItem}>
             <View style={[styles.legendDot, { backgroundColor: t.color }]} />
-            <Text style={[styles.legendTicker, { color: themeColors.text }]}>{t.ticker}</Text>
+            <Text style={[styles.legendTicker, { color: themeColors.text }]} numberOfLines={1}>{getDisplayName(t.ticker)}</Text>
             <Text style={[styles.legendPct, { color: themeColors.textSecondary }]}>{t.weight.toFixed(0)}%</Text>
           </View>
         ))}
@@ -695,7 +696,7 @@ function MonthDetailPanel({ month }: { month: MonthData }) {
       {month.events.map((e, idx) => (
         <View key={`${e.ticker}-${idx}`} style={[styles.eventRow, { borderTopColor: themeColors.border }]}>
           <View style={[styles.eventDot, { backgroundColor: e.color }]} />
-          <Text style={[styles.eventTicker, { color: themeColors.text }]}>{e.ticker}</Text>
+          <Text style={[styles.eventTicker, { color: themeColors.text }]} numberOfLines={1}>{getDisplayName(e.ticker)}</Text>
           <Text style={[styles.eventDate, { color: themeColors.textSecondary }]}>
             {e.paymentDate.getMonth() + 1}월 {e.paymentDate.getDate()}일
           </Text>
@@ -851,7 +852,7 @@ const styles = StyleSheet.create({
   colorHint: { fontSize: 11, opacity: 0.6, marginBottom: 4 },
   tickerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   colorDot: { width: 14, height: 14, borderRadius: 7, flexShrink: 0 },
-  tickerName: { fontSize: 13, fontWeight: '700', width: 52 },
+  tickerName: { fontSize: 13, fontWeight: '700', width: 80 },
   barTrack: {
     flex: 1, height: 6,
     borderRadius: 3, overflow: 'hidden',
@@ -913,7 +914,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6, borderTopWidth: 1,
   },
   eventDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
-  eventTicker: { fontSize: 13, fontWeight: '700', width: 52 },
+  eventTicker: { fontSize: 13, fontWeight: '700', width: 80 },
   eventDate: { fontSize: 12, flex: 1 },
   eventAmount: { fontSize: 13, fontWeight: '600' },
   statusBadge: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },

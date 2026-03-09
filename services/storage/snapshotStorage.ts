@@ -62,6 +62,18 @@ export async function saveSnapshot(snapshot: PortfolioSnapshot): Promise<void> {
   }
 }
 
+// ── 삭제 ─────────────────────────────────────────────────────
+
+export async function deleteSnapshot(date: string): Promise<void> {
+  try {
+    const all = await loadSnapshots();
+    const filtered = all.filter(s => s.date !== date);
+    await AsyncStorage.setItem(STORAGE_KEYS.SNAPSHOTS, JSON.stringify(filtered));
+  } catch (e) {
+    console.warn('[snapshotStorage] deleteSnapshot failed:', e);
+  }
+}
+
 // ── 로드 (마이그레이션 포함) ──────────────────────────────────
 
 export async function loadSnapshots(): Promise<PortfolioSnapshot[]> {

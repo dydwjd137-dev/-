@@ -10,6 +10,8 @@ import {
   ScrollView,
   ActivityIndicator,
   FlatList,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../contexts/DisplayPreferencesContext';
@@ -234,7 +236,16 @@ export function AddHoldingModal({ visible, onClose }: AddHoldingModalProps) {
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.scrollView} keyboardShouldPersistTaps="handled">
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ flex: 1 }}
+          >
+          <ScrollView
+            style={styles.scrollView}
+            keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled={true}
+            contentContainerStyle={{ flexGrow: 1, paddingBottom: 40 }}
+          >
             <View style={styles.form}>
 
               {/* 티커 입력 + 자동완성 드롭다운 */}
@@ -529,6 +540,7 @@ export function AddHoldingModal({ visible, onClose }: AddHoldingModalProps) {
               </TouchableOpacity>
             </View>
           </ScrollView>
+          </KeyboardAvoidingView>
         </View>
       </View>
     </Modal>
@@ -544,8 +556,8 @@ const styles = StyleSheet.create({
   modalContainer: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    paddingBottom: 40,
     height: '85%',
+    overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',

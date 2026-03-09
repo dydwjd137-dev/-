@@ -2,6 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { useTheme } from '../../contexts/DisplayPreferencesContext';
 import { StockPerformanceData } from '../../services/performance/IStockPerformanceService';
+import { getDisplayName } from '../../constants/searchDatabase';
+
+/** .KS/.KQ 등 거래소 suffix 제거 (BRK.B 같은 점 포함 티커는 유지) */
+function cleanTicker(symbol: string): string {
+  if (/\.(KS|KQ|T|HK|SS|SZ)$/.test(symbol)) return symbol.split('.')[0];
+  return symbol;
+}
 
 const NVSTLY_BASE = 'https://github.com/nvstly/icons/raw/refs/heads/main/ticker_icons';
 const FMP_BASE    = 'https://financialmodelingprep.com/image-stock';
@@ -69,10 +76,10 @@ export default function StockPerformanceCard({ data, rank }: Props) {
       {/* 로고 */}
       <StockLogo symbol={data.symbol} />
 
-      {/* 티커 */}
+      {/* 종목명 */}
       <View style={styles.tickerCol}>
-        <Text style={[styles.symbol, { color: themeColors.text }]}>{data.symbol}</Text>
-        <Text style={[styles.rank, { color: themeColors.textSecondary }]}>#{rank}</Text>
+        <Text style={[styles.symbol, { color: themeColors.text }]} numberOfLines={1}>{getDisplayName(data.symbol)}</Text>
+        <Text style={[styles.rank, { color: themeColors.textSecondary }]}>{cleanTicker(data.symbol)} #{rank}</Text>
       </View>
 
       {/* 기간종가 / 전일종가 */}
@@ -119,10 +126,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   tickerCol: {
-    width: 56,
+    width: 90,
   },
   symbol: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
   },
   rank: {

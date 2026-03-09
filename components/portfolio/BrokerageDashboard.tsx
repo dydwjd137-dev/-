@@ -14,6 +14,7 @@ import { EnrichedHolding, BROKERAGE_LIST, BrokerageId } from '../../types/portfo
 import { BROKERAGE_LOGOS } from '../../constants/brokerageLogos';
 import { formatKRW, formatPercent } from '../../utils/portfolioCalculations';
 import { useTheme } from '../../contexts/DisplayPreferencesContext';
+import { getDisplayName } from '../../constants/searchDatabase';
 
 interface BrokerageDashboardProps {
   holdings: EnrichedHolding[];
@@ -211,7 +212,7 @@ export function BrokerageDashboard({ holdings, exchangeRate, showKRW }: Brokerag
                         <View key={item.id} style={[styles.holdingRow, { borderBottomColor: themeColors.border }]}>
                           <View style={[styles.holdingBar, { backgroundColor: isProfit ? themeColors.profit : themeColors.loss }]} />
                           <View style={styles.holdingLeft}>
-                            <Text style={[styles.holdingTicker, { color: themeColors.text }]}>{item.ticker}</Text>
+                            <Text style={[styles.holdingTicker, { color: themeColors.text }]} numberOfLines={1}>{getDisplayName(item.ticker)}</Text>
                             <Text style={[styles.holdingCategory, { color: themeColors.textSecondary }]}>{item.category}</Text>
                           </View>
                           <View style={styles.holdingRight}>
