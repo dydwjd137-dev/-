@@ -1,19 +1,20 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../contexts/DisplayPreferencesContext';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { ACCOUNT_TYPE_COLORS } from '../../types/portfolio';
 import { calculateTaxSummary, formatKRW, AccountTaxResult } from '../../utils/taxEngine';
-import { getTaxAdvice, TaxAdviceResponse } from '../../services/api/claude';
-import TaxAdviceView from '../../components/ai/TaxAdviceView';
+import { getTaxAdvice } from '../../services/api/claude';
+import { TaxAdviceResponse } from '../../components/ai/TaxAdviceView';
+import TaxAdviceModal from '../../components/ai/TaxAdviceModal';
+import { saveTaxAdvice, loadTaxAdvice, formatSavedAt } from '../../services/storage/aiAnalysisStorage';
 
 // ── 계좌 카드 컴포넌트 ──────────────────────────────────────
 function AccountCard({ result }: { result: AccountTaxResult }) {
@@ -89,17 +90,33 @@ export default function TaxScreen() {
   const [aiAdvice, setAiAdvice] = useState<TaxAdviceResponse | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiModalVisible, setAiModalVisible] = useState(false);
+  const [aiSavedAt, setAiSavedAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadTaxAdvice<TaxAdviceResponse>().then(stored => {
+      if (stored) {
+        setAiAdvice(stored.data);
+        setAiSavedAt(formatSavedAt(stored.savedAt));
+      }
+    });
+  }, []);
 
   const taxSummary = useMemo(() => {
     if (holdings.length === 0) return null;
     return calculateTaxSummary(holdings, exchangeRate);
   }, [holdings, exchangeRate]);
 
+  const handleOpenAiModal = () => {
+    if (aiAdvice) { setAiModalVisible(true); return; }
+    handleAiAdvice();
+  };
+
   const handleAiAdvice = async () => {
     if (!taxSummary) return;
+    setAiModalVisible(true);
     setAiLoading(true);
     setAiError(null);
-    setAiAdvice(null);
     try {
       const result = await getTaxAdvice({
         byAccount: taxSummary.byAccount.map(r => ({
@@ -111,6 +128,18 @@ export default function TaxScreen() {
           dividendTax: r.dividendTax,
           holdingCount: r.holdingCount,
         })),
+        holdings: holdings.map(h => ({
+          ticker: h.ticker,
+          accountType: h.accountType ?? 'REGULAR',
+          currency: (h.quote?.currency === 'KRW' ? 'KRW' : 'USD') as 'KRW' | 'USD',
+          unrealizedGainKRW: h.profitLoss,
+          profitLossPercent: h.profitLossPercent,
+          annualDividendKRW: h.dividends.reduce((s, d) => {
+            const perShareKRW = d.currency === 'KRW' ? d.amount : d.amount * exchangeRate;
+            const times = d.frequency === 'MONTHLY' ? 12 : d.frequency === 'QUARTERLY' ? 4 : d.frequency === 'SEMI_ANNUAL' ? 2 : 1;
+            return s + perShareKRW * times * h.quantity;
+          }, 0),
+        })),
         totalTax: taxSummary.totalTax,
         totalTaxSaved: taxSummary.totalTaxSaved,
         annualDividendTotal: taxSummary.annualDividendTotal,
@@ -118,7 +147,10 @@ export default function TaxScreen() {
         exchangeRate,
       });
       setAiAdvice(result);
+      await saveTaxAdvice(result);
+      setAiSavedAt(formatSavedAt(new Date().toISOString()));
     } catch {
+      setAiModalVisible(false);
       setAiError('AI 분석에 실패했습니다. 잠시 후 다시 시도해주세요.');
     } finally {
       setAiLoading(false);
@@ -264,23 +296,16 @@ export default function TaxScreen() {
             </Text>
           </View>
 
-          {!aiAdvice && !aiLoading && (
-            <TouchableOpacity
-              style={[styles.aiBtn, { backgroundColor: '#A855F7' }]}
-              onPress={handleAiAdvice}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="sparkles" size={16} color="#fff" />
-              <Text style={styles.aiBtnText}>AI 분석 시작</Text>
-            </TouchableOpacity>
-          )}
-
-          {aiLoading && (
-            <View style={styles.aiLoading}>
-              <ActivityIndicator size="small" color="#A855F7" />
-              <Text style={[styles.aiLoadingText, { color: themeColors.textSecondary }]}>분석 중…</Text>
-            </View>
-          )}
+          <TouchableOpacity
+            style={[styles.aiBtn, { backgroundColor: '#A855F7' }]}
+            onPress={handleOpenAiModal}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="sparkles" size={16} color="#fff" />
+            <Text style={styles.aiBtnText}>
+              {aiAdvice ? (aiSavedAt ? `${aiSavedAt} 보기` : '분석 결과 보기') : 'AI 분석 시작'}
+            </Text>
+          </TouchableOpacity>
 
           {aiError && (
             <View style={styles.aiErrorRow}>
@@ -291,19 +316,14 @@ export default function TaxScreen() {
             </View>
           )}
 
-          {aiAdvice && (
-            <View style={styles.aiResultWrap}>
-              <TaxAdviceView data={aiAdvice} />
-              <TouchableOpacity
-                style={[styles.aiRefreshBtn, { borderColor: '#A855F7' }]}
-                onPress={handleAiAdvice}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="refresh" size={14} color="#A855F7" />
-                <Text style={[styles.aiRefreshText, { color: '#A855F7' }]}>다시 분석</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          <TaxAdviceModal
+            visible={aiModalVisible}
+            onClose={() => setAiModalVisible(false)}
+            data={aiAdvice}
+            loading={aiLoading}
+            onReanalyze={handleAiAdvice}
+            savedAt={aiSavedAt}
+          />
         </View>
       </View>
 

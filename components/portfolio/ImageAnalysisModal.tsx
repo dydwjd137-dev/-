@@ -77,9 +77,9 @@ export default function ImageAnalysisModal({ visible, holdings, onClose, onDone 
     }
   };
 
-  // 티커를 바꾸지 않고 현재 종목명/티커로 즉시 검색
+  // 티커를 바꾸지 않고 현재 종목명/티커로 즉시 검색 (ticker 우선)
   const triggerSearch = (index: number, item: EditableHolding) => {
-    const query = (item.name || item.ticker || '').trim();
+    const query = (item.ticker || item.name || '').trim();
     if (query.length >= 1) {
       const results = searchStocks(query, 8);
       setTickerSearchResults(results);
@@ -243,7 +243,9 @@ export default function ImageAnalysisModal({ visible, holdings, onClose, onDone 
                         style={[styles.fieldInput, { backgroundColor: themeColors.background, borderColor: themeColors.border, color: themeColors.text }]}
                         value={item.ticker}
                         onChangeText={v => handleTickerChange(index, v)}
-                        onFocus={() => triggerSearch(index, item)}
+                        onFocus={() => {
+                          if (item.ticker) handleTickerChange(index, item.ticker);
+                        }}
                         autoCapitalize="characters"
                         editable={!isSubmitting}
                       />

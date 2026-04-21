@@ -25,12 +25,13 @@ import ImageAnalysisModal from '../../components/portfolio/ImageAnalysisModal';
 import CsvImportModal from '../../components/portfolio/CsvImportModal';
 import ChatModal from '../../components/ai/ChatModal';
 import ImageAnalysisResult from '../../components/ai/ImageAnalysisResult';
-import PortfolioCommentCard from '../../components/ai/PortfolioCommentCard';
 import { BrokerageDashboard } from '../../components/portfolio/BrokerageDashboard';
 import { RefreshButton } from '../../components/common/RefreshButton';
 import { SettingsModal } from '../../components/settings/SettingsModal';
 import { OTHER_ASSET_ICONS } from '../../types/otherAssets';
 import { analyzePortfolioImage, getPortfolioComment, ExtractedHolding, ImageAnalysisResponse, PortfolioCommentResponse } from '../../services/api/claude';
+import PortfolioCommentModal from '../../components/ai/PortfolioCommentModal';
+import { savePortfolioComment, loadPortfolioComment, formatSavedAt } from '../../services/storage/aiAnalysisStorage';
 import {
   formatUSD,
   convertKRWToUSD,
@@ -82,14 +83,36 @@ export default function HomeScreen() {
   // AI 포트폴리오 코멘트
   const [aiCommentData, setAiCommentData] = useState<PortfolioCommentResponse | null>(null);
   const [isCommentLoading, setIsCommentLoading] = useState(false);
+  const [aiModalVisible, setAiModalVisible] = useState(false);
+  const [aiSavedAt, setAiSavedAt] = useState<string | null>(null);
 
-  const handleAiComment = async () => {
+  // 저장된 분석 불러오기
+  useEffect(() => {
+    loadPortfolioComment<PortfolioCommentResponse>().then(stored => {
+      if (stored) {
+        setAiCommentData(stored.data);
+        setAiSavedAt(formatSavedAt(stored.savedAt));
+      }
+    });
+  }, []);
+
+  // 저장된 분석 결과 보기 (재분석 없이)
+  const handleOpenAiModal = () => {
+    if (aiCommentData) {
+      setAiModalVisible(true);
+      return;
+    }
+    handleReanalyze();
+  };
+
+  // 실제 재분석
+  const handleReanalyze = async () => {
     if (!summary || holdings.length === 0) {
       Alert.alert('보유 종목 없음', '종목을 먼저 추가해주세요.');
       return;
     }
+    setAiModalVisible(true);
     setIsCommentLoading(true);
-    setAiCommentData(null);
     try {
       const data = await getPortfolioComment({
         totalValue: summary.totalValue,
@@ -103,11 +126,9 @@ export default function HomeScreen() {
           profitLossPercent: h.profitLossPercent,
         })),
       });
-      if (!data.summary) {
-        Alert.alert('빈 응답', '서버가 빈 응답을 반환했습니다.\n잠시 후 다시 시도해주세요.');
-        return;
-      }
       setAiCommentData(data);
+      await savePortfolioComment(data);
+      setAiSavedAt(formatSavedAt(new Date().toISOString()));
     } catch (e: any) {
       Alert.alert('오류', e?.message ?? 'AI 코멘트를 불러오지 못했습니다.');
     } finally {
@@ -461,32 +482,37 @@ export default function HomeScreen() {
         </Text>
       </View>
 
-      {/* AI 포트폴리오 코멘트 카드 */}
+      {/* AI 포트폴리오 분석 버튼 */}
       {holdings.length > 0 && (
-        <View style={[styles.aiCard, { backgroundColor: themeColors.cardBackground, borderColor: themeColors.border }]}>
+        <TouchableOpacity
+          style={[styles.aiCard, { backgroundColor: themeColors.cardBackground, borderColor: themeColors.border }]}
+          onPress={handleOpenAiModal}
+          activeOpacity={0.8}
+        >
           <View style={styles.aiCardHeader}>
             <Text style={styles.aiCardEmoji}>🤖</Text>
-            <Text style={[styles.aiCardTitle, { color: themeColors.text }]}>AI 포트폴리오 분석</Text>
-            <TouchableOpacity
-              style={[styles.aiCardBtn, { backgroundColor: themeColors.primary + '18', borderColor: themeColors.primary + '50' }]}
-              onPress={handleAiComment}
-              disabled={isCommentLoading}
-            >
-              {isCommentLoading
-                ? <ActivityIndicator size="small" color={themeColors.primary} />
-                : <Text style={[styles.aiCardBtnText, { color: themeColors.primary }]}>분석하기</Text>
-              }
-            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.aiCardTitle, { color: themeColors.text }]}>AI 포트폴리오 분석</Text>
+              <Text style={[styles.aiCardPlaceholder, { color: themeColors.textSecondary, marginTop: 2 }]}>
+                {aiSavedAt ? `${aiSavedAt} · 탭하여 보기` : (aiCommentData ? '분석 결과 보기' : '탭하여 AI 분석 시작')}
+              </Text>
+            </View>
+            <View style={[styles.aiCardBtn, { backgroundColor: themeColors.primary + '18', borderColor: themeColors.primary + '50' }]}>
+              <Ionicons name="sparkles" size={14} color={themeColors.primary} />
+              <Text style={[styles.aiCardBtnText, { color: themeColors.primary }]}>{aiCommentData ? '보기' : '분석'}</Text>
+            </View>
           </View>
-          {aiCommentData ? (
-            <PortfolioCommentCard data={aiCommentData} />
-          ) : (
-            <Text style={[styles.aiCardPlaceholder, { color: themeColors.textSecondary }]}>
-              내 포트폴리오에 대한 AI의 시각을 확인해보세요
-            </Text>
-          )}
-        </View>
+        </TouchableOpacity>
       )}
+
+      <PortfolioCommentModal
+        visible={aiModalVisible}
+        onClose={() => setAiModalVisible(false)}
+        data={aiCommentData}
+        loading={isCommentLoading}
+        onReanalyze={handleReanalyze}
+        savedAt={aiSavedAt}
+      />
 
       {/* 하단 여백 (FAB 공간 확보) */}
       <View style={{ height: 100 }} />

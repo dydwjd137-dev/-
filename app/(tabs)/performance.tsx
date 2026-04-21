@@ -212,16 +212,24 @@ export default function PerformanceScreen() {
       const currValue = h.currentValue ?? 0;
       const weight = totalValue > 0 ? Math.round((currValue / totalValue) * 1000) / 10 : 0;
 
+      // 스냅샷 기반 주간 손익 (없으면 총 손익으로 fallback)
       const prevW = weekSnap?.holdings?.find(ph => ph.symbol === h.ticker);
       const prevWVal = prevW?.value ?? 0;
-      const weekPnlKRW = prevWVal > 0 ? currValue - prevWVal : 0;
-      const weekReturn  = prevWVal > 0 ? Math.round((weekPnlKRW / prevWVal) * 10000) / 100 : 0;
+      const hasWeekSnap = prevWVal > 0 && prevW?.value !== currValue;
+      const weekPnlKRW = hasWeekSnap ? currValue - prevWVal : (h.profitLoss ?? 0);
+      const weekReturn  = hasWeekSnap
+        ? Math.round((weekPnlKRW / prevWVal) * 10000) / 100
+        : Math.round((h.profitLossPercent ?? 0) * 100) / 100;
       const weekPnl     = Math.round(convertKRWToUSD(weekPnlKRW) * 100) / 100;
 
+      // 스냅샷 기반 월간 손익 (없으면 총 손익으로 fallback)
       const prevM = monthSnap?.holdings?.find(ph => ph.symbol === h.ticker);
       const prevMVal = prevM?.value ?? 0;
-      const monthPnlKRW = prevMVal > 0 ? currValue - prevMVal : 0;
-      const monthReturn  = prevMVal > 0 ? Math.round((monthPnlKRW / prevMVal) * 10000) / 100 : 0;
+      const hasMonthSnap = prevMVal > 0 && prevM?.value !== currValue;
+      const monthPnlKRW = hasMonthSnap ? currValue - prevMVal : (h.profitLoss ?? 0);
+      const monthReturn  = hasMonthSnap
+        ? Math.round((monthPnlKRW / prevMVal) * 10000) / 100
+        : Math.round((h.profitLossPercent ?? 0) * 100) / 100;
       const monthPnl     = Math.round(convertKRWToUSD(monthPnlKRW) * 100) / 100;
 
       return {

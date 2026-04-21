@@ -85,7 +85,7 @@ export default function DailyChangeChart({ daily }: Props) {
                 fontFamily={MONO}
                 fill={color}
               >
-                {isPos ? '+' : ''}{item.change}
+                {`${isPos ? '+' : ''}${item.change}`}
               </SvgText>
               {/* Day label */}
               <SvgText

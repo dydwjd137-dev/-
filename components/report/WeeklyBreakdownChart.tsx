@@ -35,7 +35,7 @@ export default function WeeklyBreakdownChart({ data }: Props) {
             <React.Fragment key={i}>
               <Rect x={cx - barW / 2} y={isPos ? midY - barH : midY} width={barW} height={Math.max(barH, 2)} fill={color} rx={2} />
               <SvgText x={cx} y={isPos ? midY - barH - 4 : midY + barH + 12} fontSize={10} fill={color} textAnchor="middle" fontFamily={MONO}>
-                {d.returnPct >= 0 ? '+' : ''}{d.returnPct.toFixed(2)}%
+                {`${d.returnPct >= 0 ? '+' : ''}${d.returnPct.toFixed(2)}%`}
               </SvgText>
               <SvgText x={cx} y={chartH - 2} fontSize={11} fill={TEXT_SEC} textAnchor="middle">{d.week.replace('주차', 'W')}</SvgText>
             </React.Fragment>
